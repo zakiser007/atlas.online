@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Instagram Chatbot Manager | Atlas</title>
+    
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Supabase JS (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class', 
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: { 850: '#151f32', 900: '#0f172a', 950: '#020617' },
+                        insta: { pink: '#E1306C', purple: '#C13584', orange: '#F56040', yellow: '#FCAF45' }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+        
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(74, 222, 128, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+        }
+        .status-pulse { animation: pulse-green 2s infinite; }
+
+        /* Loader */
+        .loader {
+            border: 3px solid rgba(225, 48, 108, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #E1306C;
+            width: 24px; height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Line Numbers for Editor */
+        .editor-container { position: relative; display: flex; }
+        .line-numbers {
+            font-family: 'JetBrains Mono', monospace;
+            text-align: right;
+            padding: 2rem 0.5rem;
+            color: #64748b;
+            user-select: none;
+            line-height: 1.625; /* Matches textarea leading-relaxed */
+            font-size: 0.875rem;
+        }
+        
+        /* Sidebar Collapse Overrides */
+        body.sidebar-collapsed #sidebar { width: 5rem !important; }
+        body.sidebar-collapsed .sidebar-text,
+        body.sidebar-collapsed .logo-text,
+        body.sidebar-collapsed .footer-text,
+        body.sidebar-collapsed .user-info-panel { display: none !important; }
+        body.sidebar-collapsed #collapse-icon { transform: rotate(180deg); }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-950 min-h-screen font-sans text-slate-800 dark:text-slate-100 antialiased overflow-hidden selection:bg-pink-200 selection:text-pink-900 transition-colors duration-300">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl p-6 max-w-sm w-full border border-slate-100 dark:border-slate-800 transform scale-95 opacity-0 transition-all duration-200" id="confirm-modal-content">
+            <h3 class="text-lg font-bold mb-2 text-slate-800 dark:text-white" id="confirm-title">Confirm Action</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 mb-6" id="confirm-msg">Are you sure you want to proceed?</p>
+            <div class="flex justify-end gap-3">
+                <button onclick="closeModal()" class="px-4 py-2 text-sm font-semibold text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors">Cancel</button>
+                <button id="confirm-btn" class="px-4 py-2 text-sm font-bold text-white bg-red-500 hover:bg-red-600 rounded-lg shadow-lg shadow-red-500/20 transition-colors">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="flex h-screen w-full max-w-[1920px] mx-auto bg-white dark:bg-slate-900 shadow-2xl overflow-hidden md:my-0 transition-colors duration-300">
+        
+        <!-- Sidebar -->
+        <div id="sidebar" class="w-20 md:w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex-shrink-0 flex flex-col justify-between transition-all duration-300 z-20">
+            <div>
+                <div class="h-16 flex items-center justify-between px-4 md:px-6 border-b border-slate-100 dark:border-slate-800">
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <div class="w-8 h-8 flex-shrink-0 rounded-xl bg-gradient-to-tr from-yellow-400 via-red-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-md shadow-pink-500/20">I</div>
+                        <span class="logo-text text-slate-800 dark:text-white font-bold tracking-tight hidden md:block text-lg whitespace-nowrap">InstaManager</span>
+                    </div>
+                    <button onclick="toggleSidebar()" class="hidden md:flex items-center justify-center w-6 h-6 rounded-md text-slate-400 hover:text-pink-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all">
+                        <svg id="collapse-icon" class="w-4 h-4 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"></path></svg>
+                    </button>
+                </div>
+
+                <nav class="p-3 space-y-2 mt-4">
+                    <button onclick="switchTab('prompt')" id="nav-prompt" class="nav-btn w-full flex items-center gap-3 px-3 py-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group active">
+                        <svg class="w-6 h-6 flex-shrink-0 group-[.active]:text-pink-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                        <span class="sidebar-text hidden md:block text-sm font-semibold group-[.active]:text-slate-900 dark:group-[.active]:text-white whitespace-nowrap">Prompt Editor</span>
+                    </button>
+                    <button onclick="switchTab('messages')" id="nav-messages" class="nav-btn w-full flex items-center gap-3 px-3 py-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group">
+                        <svg class="w-6 h-6 flex-shrink-0 group-[.active]:text-pink-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        <span class="sidebar-text hidden md:block text-sm font-semibold group-[.active]:text-slate-900 dark:group-[.active]:text-white whitespace-nowrap">Message List</span>
+                    </button>
+                    <button onclick="switchTab('send')" id="nav-send" class="nav-btn w-full flex items-center gap-3 px-3 py-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group">
+                        <svg class="w-6 h-6 flex-shrink-0 group-[.active]:text-pink-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+                        <span class="sidebar-text hidden md:block text-sm font-semibold group-[.active]:text-slate-900 dark:group-[.active]:text-white whitespace-nowrap">Broadcast Center</span>
+                    </button>
+                    <button onclick="switchTab('banned')" id="nav-banned" class="nav-btn w-full flex items-center gap-3 px-3 py-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all group">
+                        <svg class="w-6 h-6 flex-shrink-0 group-[.active]:text-pink-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+                        <span class="sidebar-text hidden md:block text-sm font-semibold group-[.active]:text-slate-900 dark:group-[.active]:text-white whitespace-nowrap">Banned IDs</span>
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Sidebar Footer: Auth Info -->
+            <div class="p-4 md:p-6 border-t border-slate-100 dark:border-slate-800">
+                <!-- User Info Panel -->
+                <div class="user-info-panel mb-4 bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider mb-1">Logged in as</div>
+                    <div id="user-name-display" class="font-bold text-sm text-slate-700 dark:text-slate-200 truncate flex items-center gap-2">
+                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span>Loading...</span>
+                    </div>
+                    <div class="text-[10px] font-mono text-slate-400 mt-1 truncate" id="table-name-display">Table: ...</div>
+                </div>
+
+                <div class="flex gap-2">
+                    <button onclick="toggleDarkMode()" class="flex-1 flex items-center justify-center p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all border border-slate-200 dark:border-slate-700" title="Toggle Theme">
+                        <svg class="w-5 h-5 hidden dark:block text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                        <svg class="w-5 h-5 block dark:hidden text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    </button>
+                    <button onclick="handleLogout()" class="flex-1 flex items-center justify-center p-2 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all border border-red-200 dark:border-red-900/50" title="Logout">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
+                    </button>
+                </div>
+                
+                <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-4 justify-center md:justify-start">
+                    <span id="status-indicator" class="w-2 h-2 rounded-full bg-slate-300 dark:bg-slate-600"></span>
+                    <span id="status-text" class="footer-text hidden md:inline font-medium whitespace-nowrap">Disconnected</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="flex-1 flex flex-col bg-slate-50 dark:bg-slate-950 relative overflow-hidden transition-colors duration-300">
+            
+            <header class="h-16 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-8 shrink-0 z-10 sticky top-0 transition-colors duration-300">
+                <div class="flex items-center gap-4">
+                    <h1 id="page-title" class="text-xl font-bold text-slate-800 dark:text-white tracking-tight">Prompt Editor</h1>
+                    <div class="h-6 w-px bg-slate-200 dark:bg-slate-700"></div>
+                    <div id="welcome-msg" class="text-sm font-medium text-slate-500 dark:text-slate-400">Welcome back</div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span class="flex items-center gap-2 text-xs font-bold text-slate-600 dark:text-slate-300 px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700">
+                        <span class="w-2 h-2 rounded-full bg-green-400 status-pulse"></span>
+                        Active Session
+                    </span>
+                </div>
+            </header>
+
+            <div class="flex-1 relative overflow-hidden">
+                
+                <!-- TAB 1: PROMPT EDITOR -->
+                <div id="tab-prompt" class="absolute inset-0 flex flex-col p-8 animate-fade-in">
+                    <div class="flex-1 bg-white dark:bg-slate-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col transition-colors duration-300">
+                        <div class="bg-white dark:bg-slate-900 border-b border-slate-100 dark:border-slate-800 p-4 flex justify-between items-center shrink-0">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xs font-bold text-slate-400 uppercase tracking-wider ml-2">insta_prompt</span>
+                                <span id="autosave-indicator" class="text-[10px] text-slate-400 transition-opacity opacity-0">Draft saved</span>
+                            </div>
+                            
+                            <div class="flex items-center gap-4">
+                                <label class="relative inline-flex items-center cursor-pointer group" title="Toggle Bot Status">
+                                    <input type="checkbox" id="status-toggle" class="sr-only peer" onchange="toggleActiveState()">
+                                    <div class="w-9 h-5 bg-slate-200 dark:bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+                                    <span class="ml-2 text-xs font-bold text-slate-400" id="status-label">Status</span>
+                                </label>
+                                <div class="h-4 w-px bg-slate-200 dark:bg-slate-700"></div>
+                                <div class="flex gap-2">
+                                    <button onclick="copyToClipboard()" class="text-xs font-semibold flex items-center gap-1 text-slate-600 dark:text-slate-400 hover:text-pink-600 dark:hover:text-pink-400 px-3 py-1.5 rounded-lg hover:bg-pink-50 dark:hover:bg-slate-800 transition-colors">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                        Copy
+                                    </button>
+                                    <button onclick="savePrompt()" id="save-btn" class="text-xs font-bold flex items-center gap-1 text-white bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 hover:dark:bg-slate-600 px-5 py-2 rounded-lg shadow-md transition-all active:scale-95">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+                                        Save
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="relative flex-1 group bg-slate-50/50 dark:bg-slate-950/50 editor-container overflow-hidden">
+                            <!-- Line Numbers (Visual Only) -->
+                            <div class="line-numbers bg-slate-100 dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 w-12 flex-shrink-0 h-full overflow-hidden" aria-hidden="true">
+                                1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>...
+                            </div>
+                            
+                            <textarea id="prompt-input" spellcheck="false" class="w-full h-full bg-slate-50 dark:bg-slate-950 text-slate-800 dark:text-slate-200 p-8 font-mono text-sm leading-relaxed resize-none focus:outline-none custom-scrollbar" placeholder="// Fetching prompt..."></textarea>
+                            
+                            <div class="absolute bottom-4 right-8 text-[10px] text-slate-400 font-mono bg-white/80 dark:bg-slate-900/80 px-2 py-1 rounded border border-slate-200 dark:border-slate-800">
+                                <span id="char-count">0</span> chars
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: MESSAGE HISTORY -->
+                <div id="tab-messages" class="absolute inset-0 flex flex-col p-8 overflow-hidden hidden animate-fade-in">
+                    <div class="flex justify-between items-center mb-6 shrink-0">
+                        <div>
+                            <h2 class="text-xl font-bold text-slate-800 dark:text-white">Interactions</h2>
+                            <p class="text-sm text-slate-500 dark:text-slate-400">Recent Lead messages. </p>
+                        </div>
+                        <div class="flex gap-2">
+                             <!-- Search could go here -->
+                            <button onclick="refreshMessages(true)" class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                Reload
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 overflow-y-auto custom-scrollbar pr-2 relative" id="messages-scroll-container">
+                        <div id="messages-list" class="grid grid-cols-1 xl:grid-cols-2 gap-4 pb-4">
+                            <!-- Cards will be injected here -->
+                        </div>
+
+                        <!-- Load More Sentinel -->
+                        <div id="load-more-container" class="py-6 text-center hidden">
+                            <button onclick="loadMoreMessages()" id="btn-load-more" class="text-sm font-medium text-pink-600 hover:text-pink-700 dark:text-pink-400 hover:underline">
+                                Load older messages
+                            </button>
+                        </div>
+
+                        <div id="empty-messages" class="hidden flex flex-col items-center justify-center h-40 text-slate-400 dark:text-slate-500">
+                            <p>No messages found.</p>
+                        </div>
+                        
+                        <div id="loader-messages" class="flex justify-center py-10 hidden">
+                            <div class="loader"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BROADCAST CENTER -->
+                <div id="tab-send" class="absolute inset-0 flex flex-col p-8 overflow-y-auto custom-scrollbar hidden animate-fade-in">
+                    <div class="max-w-4xl mx-auto w-full">
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl shadow-xl shadow-slate-200/50 dark:shadow-none border border-slate-100 dark:border-slate-800 overflow-hidden">
+                            <div class="p-8 border-b border-slate-100 dark:border-slate-800 flex justify-between items-start bg-slate-50/50 dark:bg-slate-800/30">
+                                <div>
+                                    <h2 class="text-xl font-bold text-slate-800 dark:text-white">Broadcast</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1">Send a message to all tracked Leads.</p>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-2xl font-bold text-pink-600 dark:text-pink-400" id="badge-leads">...</div>
+                                    <div class="text-[10px] uppercase font-bold text-slate-400">Recipients</div>
+                                </div>
+                            </div>
+
+                            <div class="p-8">
+                                <div class="space-y-6">
+                                    <div id="container-lead-msg" class="group">
+                                        <label class="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Message Content</label>
+                                        <textarea id="input-lead" class="w-full h-40 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-pink-500 focus:border-pink-500 transition-all resize-none outline-none placeholder:text-slate-400" placeholder="Type your broadcast message here..."></textarea>
+                                        <div class="flex justify-end mt-2">
+                                            <span class="text-[10px] text-slate-400" id="broadcast-char-count">0 chars</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="bg-slate-50 dark:bg-slate-800 px-8 py-6 border-t border-slate-100 dark:border-slate-700 flex items-center justify-end">
+                                <button onclick="confirmBroadcast()" id="btn-submit-send" class="flex items-center gap-2 px-8 py-3 bg-slate-900 dark:bg-slate-700 hover:bg-slate-800 text-white rounded-xl transition-all transform active:scale-95 font-bold shadow-lg">
+                                    <span>Send Broadcast</span>
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                 <!-- TAB 4: BANNED USERS -->
+                 <div id="tab-banned" class="absolute inset-0 flex flex-col p-8 overflow-hidden hidden animate-fade-in">
+                    <div class="max-w-4xl mx-auto w-full flex-1 flex flex-col">
+                        <div class="flex justify-between items-center mb-6 shrink-0">
+                            <div>
+                                <h2 class="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    Banned IDs
+                                </h2>
+                            </div>
+                            <button onclick="fetchBannedUsers()" class="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg transition-colors">
+                                Refresh
+                            </button>
+                        </div>
+
+                        <!-- Add Ban Section -->
+                        <div class="bg-white dark:bg-slate-900 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-800 mb-6 flex gap-4">
+                            <div class="flex-1">
+                                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Ban User ID</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="input-ban-id" class="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-red-500 outline-none" placeholder="Enter ID...">
+                                    <button onclick="banIdManually()" id="btn-ban-manual" class="px-6 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl font-bold text-sm transition-colors shadow-lg shadow-red-500/20">Ban</button>
+                                </div>
+                            </div>
+                            <div class="w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
+                             <div class="flex-1">
+                                <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Search Banned List</label>
+                                <input type="text" id="search-banned" oninput="filterBannedList()" class="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-sm focus:ring-2 focus:ring-slate-400 outline-none" placeholder="Filter IDs...">
+                            </div>
+                        </div>
+
+                        <!-- Banned List -->
+                        <div class="flex-1 bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 overflow-hidden flex flex-col shadow-sm">
+                            <div class="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 flex justify-between items-center">
+                                <span class="text-xs font-bold text-slate-500">ID LIST</span>
+                                <span id="ban-count" class="text-xs font-mono bg-slate-200 dark:bg-slate-700 px-2 py-0.5 rounded text-slate-600 dark:text-slate-400">0</span>
+                            </div>
+                            
+                            <div class="flex-1 overflow-y-auto custom-scrollbar p-2">
+                                <div id="loader-banned" class="hidden flex justify-center py-10"><div class="loader"></div></div>
+                                <div id="banned-list" class="space-y-2"></div>
+                                <div id="empty-banned" class="hidden flex flex-col items-center justify-center h-40 text-slate-400 dark:text-slate-500"><p class="text-sm">No banned IDs found.</p></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /*
+         * AUTHENTICATION TESTING CHECKLIST:
+         * * ✓ Direct URL access without login → Redirects to login.html
+         * ✓ After login → Loads configuration automatically
+         * ✓ Logout button → Clears session and redirects to login
+         * ✓ Session expired (24h) → Redirects to login
+         * ✓ Corrupted localStorage data → Clears and redirects
+         * ✓ All features work without manual client ID entry
+         * ✓ User name displayed correctly in UI
+         * ✓ Navigation between pages maintains session
+         * * File: instagram.html
+         * Last Modified: 2026-01-26
+         */
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // AUTHENTICATION CHECK - Must be at the TOP
+        // ═══════════════════════════════════════════════════════════════════════
+        const AUTH_CONFIG = {
+            storageKey: 'atlas_auth',
+            loginPage: 'login.html',
+            sessionDuration: 24 * 60 * 60 * 1000 // 24 hours
+        };
+
+        // Check authentication immediately
+        function checkAuthentication() {
+            const authDataRaw = localStorage.getItem(AUTH_CONFIG.storageKey);
+            
+            if (!authDataRaw) {
+                console.warn('[AUTH] No authentication data found. Redirecting to login.');
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Not authenticated'); // Stop execution
+            }
+            
+            let authData;
+            try {
+                authData = JSON.parse(authDataRaw);
+            } catch (e) {
+                console.error('[AUTH] Corrupted authentication data. Clearing and redirecting.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Invalid auth data');
+            }
+            
+            // Validate required fields
+            if (!authData.authenticated || !authData.client_id || !authData.timestamp) {
+                console.error('[AUTH] Incomplete authentication data. Redirecting to login.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Incomplete auth data');
+            }
+            
+            // Check if session expired
+            const sessionAge = Date.now() - authData.timestamp;
+            if (sessionAge > AUTH_CONFIG.sessionDuration) {
+                console.warn('[AUTH] Session expired. Redirecting to login.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Session expired');
+            }
+            
+            console.log('[AUTH] ✓ Authentication valid for user:', authData.client_name);
+            return authData;
+        }
+
+        // Execute check immediately - this stops page load if not authenticated
+        const AUTHENTICATED_USER = checkAuthentication();
+
+        // Logout function for use in components
+        function handleLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                console.log('[AUTH] User logged out');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+            }
+        }
+
+        // Add error listener for auth issues
+        window.addEventListener('error', (event) => {
+            if (event.message.includes('Not authenticated') || 
+                event.message.includes('Session expired')) {
+                event.preventDefault();
+                console.log('[AUTH] Caught authentication error, redirecting...');
+            }
+        });
+
+        // --- CONSTANTS & CONFIG ---
+        // Refactored: Dynamic Supabase Client
+        let supabaseClient = null;
+
+        // --- GLOBAL STATE ---
+        const STATE = {
+            tableName: null,
+            webhookUrl: null,
+            messages: {
+                page: 0,
+                hasMore: true,
+                loading: false,
+                limit: 20
+            },
+            banned: {
+                allData: [], // Cache for client-side search
+                loading: false
+            }
+        };
+
+        // --- DOM ELEMENTS ---
+        const els = {
+            toastContainer: document.getElementById('toast-container'),
+            pageTitle: document.getElementById('page-title'),
+            userName: document.getElementById('user-name-display'),
+            tableName: document.getElementById('table-name-display'),
+            welcomeMsg: document.getElementById('welcome-msg'),
+            statusIndicator: document.getElementById('status-indicator'),
+            statusText: document.getElementById('status-text'),
+            
+            // Tab 1
+            promptInput: document.getElementById('prompt-input'),
+            saveBtn: document.getElementById('save-btn'),
+            statusToggle: document.getElementById('status-toggle'),
+            charCount: document.getElementById('char-count'),
+            autosaveIndicator: document.getElementById('autosave-indicator'),
+            
+            // Tab 2
+            messagesList: document.getElementById('messages-list'),
+            loaderMessages: document.getElementById('loader-messages'),
+            loadMoreContainer: document.getElementById('load-more-container'),
+            emptyMessages: document.getElementById('empty-messages'),
+
+            // Tab 3
+            inputLead: document.getElementById('input-lead'),
+            btnSubmitSend: document.getElementById('btn-submit-send'),
+            badgeLeads: document.getElementById('badge-leads'),
+            broadcastCharCount: document.getElementById('broadcast-char-count'),
+
+            // Tab 4
+            bannedList: document.getElementById('banned-list'),
+            inputBanId: document.getElementById('input-ban-id'),
+            loaderBanned: document.getElementById('loader-banned'),
+            banCount: document.getElementById('ban-count'),
+            searchBanned: document.getElementById('search-banned'),
+
+            // Modal
+            modal: document.getElementById('confirm-modal'),
+            modalTitle: document.getElementById('confirm-title'),
+            modalMsg: document.getElementById('confirm-msg'),
+            confirmBtn: document.getElementById('confirm-btn')
+        };
+
+        // --- INITIALIZATION ---
+        document.addEventListener('DOMContentLoaded', async () => {
+            initTheme();
+            await initSupabase(); // Load config first
+            
+            if (supabaseClient) {
+                loadUserConfig(); // Then load user data
+                setupEventListeners();
+            } else {
+                console.error("Critical: Supabase failed to initialize. Halting.");
+                els.statusText.textContent = "Configuration Error";
+                els.statusIndicator.classList.add('bg-red-500');
+            }
+        });
+
+        async function initSupabase() {
+            try {
+                console.log('[Init] Fetching Supabase configuration...');
+                const resp = await fetch('/.netlify/functions/get-supabase-config');
+                if (!resp.ok) throw new Error(`Config fetch failed: ${resp.status}`);
+                
+                const config = await resp.json();
+                if (!config.url || !config.key) throw new Error('Invalid config format');
+
+                supabaseClient = window.supabase.createClient(config.url, config.key);
+                console.log('[Init] Supabase client initialized securely.');
+                
+            } catch (e) {
+                console.error('[Init] Supabase Init Error:', e);
+                showToast('Critical Error: Could not connect to database.', 'error');
+                setStatus('error');
+            }
+        }
+
+        function setupEventListeners() {
+            // Prompt Editor
+            els.promptInput.addEventListener('input', () => {
+                updateCharCount(els.promptInput, els.charCount);
+                handleAutosave();
+            });
+
+            // Broadcast
+            els.inputLead.addEventListener('input', () => {
+                updateCharCount(els.inputLead, els.broadcastCharCount);
+            });
+        }
+
+        // --- CONFIGURATION LOADING ---
+        function loadUserConfig() {
+            try {
+                // Load data directly from the authenticated user object
+                STATE.tableName = AUTHENTICATED_USER.tables.instagram;
+                STATE.webhookUrl = AUTHENTICATED_USER.webhooks.instagram;
+
+                if (!STATE.tableName) {
+                    showToast('Instagram table not configured for this account.', 'error');
+                    return;
+                }
+
+                // Update UI with user info
+                // We display client_name, but rely on email for DB lookups now
+                els.userName.innerHTML = `<span>${AUTHENTICATED_USER.client_name}</span>`;
+                els.welcomeMsg.textContent = `Welcome, ${AUTHENTICATED_USER.client_name}`;
+                els.tableName.textContent = `Table: ${STATE.tableName}`;
+                
+                setStatus('connected');
+                showToast(`Connected to ${STATE.tableName}`, 'success');
+                
+                // Trigger Initial Data Loads
+                fetchInstaPrompt();
+                restoreDraft();
+
+            } catch (e) {
+                console.error("Config Load Error", e);
+                showToast("Failed to load user configuration", 'error');
+                setStatus('error');
+            }
+        }
+
+        // --- SAFE QUERY WRAPPER ---
+        async function safeQuery(queryFn) {
+            if (!supabaseClient) {
+                showToast('Database not initialized', 'error');
+                return { data: null, error: 'Database not initialized' };
+            }
+            try {
+                return await queryFn();
+            } catch (error) {
+                console.error("Supabase Error:", error);
+                if (error.message && error.message.includes('fetch')) {
+                    showToast('Network error. Please check your connection.', 'error');
+                } else {
+                    showToast(error.message || 'An error occurred', 'error');
+                }
+                return { data: null, error };
+            }
+        }
+
+        // --- NAVIGATION ---
+        function switchTab(tabName) {
+            // UI Toggle
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(`nav-${tabName}`).classList.add('active');
+            ['prompt', 'messages', 'send', 'banned'].forEach(t => {
+                const el = document.getElementById(`tab-${t}`);
+                el.classList.toggle('hidden', t !== tabName);
+            });
+
+            // Header Title
+            const titles = { prompt: 'Prompt Editor', messages: 'Interactions', send: 'Broadcast Center', banned: 'Banned IDs' };
+            els.pageTitle.textContent = titles[tabName];
+
+            // Lazy Load Logic
+            if (tabName === 'messages' && STATE.messages.page === 0 && STATE.messages.data?.length === 0) {
+                loadMoreMessages();
+            }
+            if (tabName === 'send') updateLeadCount();
+            if (tabName === 'banned') fetchBannedUsers();
+        }
+
+        // --- TAB 1: PROMPT EDITOR ---
+        async function fetchInstaPrompt() {
+            // Show loading state
+            els.promptInput.placeholder = '// Loading prompt...';
+            els.promptInput.disabled = true;
+
+            // 1. Fetch Status (is_active) from the specific Instagram table
+            if(STATE.tableName) {
+                const { data: statusData } = await safeQuery(() => 
+                    supabaseClient.from(STATE.tableName).select('is_active').eq('id', 1).single()
+                );
+
+                if (statusData) {
+                    els.statusToggle.checked = statusData.is_active === 'true';
+                }
+            }
+
+            // 2. Fetch Prompt (insta_prompt) from the 'dev_app' table
+            console.log("Fetching prompt from dev_app for email:", AUTHENTICATED_USER.email);
+            
+            const { data, error } = await safeQuery(() => 
+                supabaseClient
+                    .from('dev_app')
+                    .select('insta_prompt')
+                    .eq('client_email', AUTHENTICATED_USER.email) // Updated to use client_email
+            );
+
+            // Re-enable textarea
+            els.promptInput.disabled = false;
+            els.promptInput.placeholder = '// Start typing your Instagram bot prompt here...';
+
+            if (error) {
+                console.error("Error fetching prompt:", error);
+                showToast('Failed to load prompt', 'error');
+                return;
+            }
+
+            if (data && data.length > 0) {
+                const promptData = data[0];
+                console.log("Prompt data received:", promptData);
+                
+                // Always load the prompt from database (overwrite local draft)
+                els.promptInput.value = promptData.insta_prompt || '';
+                updateCharCount(els.promptInput, els.charCount);
+                
+                showToast('Prompt loaded successfully', 'success');
+            } else {
+                console.warn("No prompt found in dev_app for this client_email");
+                showToast('No prompt found - starting fresh', 'info');
+                els.promptInput.value = '';
+            }
+        }
+
+        let autosaveTimer;
+        function handleAutosave() {
+            clearTimeout(autosaveTimer);
+            els.autosaveIndicator.style.opacity = '0';
+            autosaveTimer = setTimeout(() => {
+                localStorage.setItem(`draft_${STATE.tableName}`, els.promptInput.value);
+                els.autosaveIndicator.textContent = 'Draft saved locally';
+                els.autosaveIndicator.style.opacity = '1';
+            }, 1000); // 1s debounce
+        }
+
+        function restoreDraft() {
+            if(!STATE.tableName) return;
+            const draft = localStorage.getItem(`draft_${STATE.tableName}`);
+            if (draft && els.promptInput.value !== draft) {
+                 if(!els.promptInput.value) els.promptInput.value = draft;
+            }
+        }
+
+        async function savePrompt() {
+            const originalText = els.saveBtn.innerHTML;
+            els.saveBtn.innerHTML = '<div class="loader w-3 h-3 border-white border-t-transparent mr-2"></div> Saving...';
+            els.saveBtn.disabled = true;
+
+            // Save to 'dev_app' table, column 'insta_prompt'
+            // Using authenticated client_email for the match
+            const { error } = await safeQuery(() => 
+                supabaseClient
+                    .from('dev_app')
+                    .update({ insta_prompt: els.promptInput.value })
+                    .eq('client_email', AUTHENTICATED_USER.email) // Updated to use client_email
+            );
+
+            if (!error) {
+                showToast('Prompt saved successfully', 'success');
+                localStorage.removeItem(`draft_${STATE.tableName}`); // Clear draft on successful save
+            } else {
+                console.error("Error saving to dev_app:", error);
+                showToast('Failed to save prompt', 'error');
+            }
+            
+            els.saveBtn.disabled = false;
+            els.saveBtn.innerHTML = originalText;
+        }
+
+        async function toggleActiveState() {
+            const newVal = els.statusToggle.checked ? 'true' : 'false';
+            await safeQuery(() => 
+                supabaseClient.from(STATE.tableName).update({ is_active: newVal }).eq('id', 1)
+            );
+            showToast(`Bot ${newVal === 'true' ? 'Active' : 'Inactive'}`, 'success');
+        }
+
+        // --- TAB 2: MESSAGES (PAGINATED) ---
+        function refreshMessages(fullReload = false) {
+            if(fullReload) {
+                STATE.messages.page = 0;
+                STATE.messages.hasMore = true;
+                els.messagesList.innerHTML = '';
+            }
+            loadMoreMessages();
+        }
+
+        async function loadMoreMessages() {
+            if (STATE.messages.loading || !STATE.messages.hasMore) return;
+            
+            STATE.messages.loading = true;
+            els.loaderMessages.classList.remove('hidden');
+            els.loadMoreContainer.classList.add('hidden');
+
+            const from = STATE.messages.page * STATE.messages.limit;
+            const to = from + STATE.messages.limit - 1;
+
+            const { data, error } = await safeQuery(() => 
+                supabaseClient
+                    .from(STATE.tableName)
+                    .select('id, lead_message, lead_num')
+                    .eq('user_email', AUTHENTICATED_USER.email) // Filter by user_email
+                    .not('lead_message', 'is', null)
+                    .order('id', { ascending: false })
+                    .range(from, to)
+            );
+
+            els.loaderMessages.classList.add('hidden');
+            STATE.messages.loading = false;
+
+            if (data) {
+                if (data.length < STATE.messages.limit) STATE.messages.hasMore = false;
+                
+                if (STATE.messages.page === 0 && data.length === 0) {
+                    els.emptyMessages.classList.remove('hidden');
+                } else {
+                    els.emptyMessages.classList.add('hidden');
+                    data.forEach(renderMessageCard);
+                    STATE.messages.page++;
+                    if (STATE.messages.hasMore) els.loadMoreContainer.classList.remove('hidden');
+                }
+            }
+        }
+
+        function renderMessageCard(row) {
+            const div = document.createElement('div');
+            div.className = 'bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow';
+            div.innerHTML = `
+                <div class="flex justify-between items-start mb-2">
+                    <span class="text-[10px] font-bold text-pink-500 uppercase">Lead Message</span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-500 font-mono">ID: ${row.lead_num || 'N/A'}</span>
+                        ${row.lead_num ? `<button onclick="confirmBan('${row.lead_num}')" class="text-xs text-red-500 hover:bg-red-50 px-2 py-0.5 rounded border border-red-100 dark:border-red-900/30">Ban</button>` : ''}
+                    </div>
+                </div>
+                <div class="text-sm text-slate-700 dark:text-slate-300 leading-relaxed break-words">${escapeHtml(row.lead_message)}</div>
+                <div class="mt-2 text-[10px] text-slate-400 text-right">Row #${row.id}</div>
+            `;
+            els.messagesList.appendChild(div);
+        }
+
+        // --- TAB 3: BROADCAST ---
+        async function updateLeadCount() {
+            // Optimized count query (HEAD request)
+            const { count, error } = await safeQuery(() => 
+                supabaseClient
+                    .from(STATE.tableName)
+                    .select('lead_num', { count: 'exact', head: true })
+                    .eq('user_email', AUTHENTICATED_USER.email) // Filter by user_email
+                    .not('lead_num', 'is', null)
+            );
+            
+            if(!error) els.badgeLeads.textContent = count !== null ? count : 0;
+        }
+
+        function confirmBroadcast() {
+            if (!els.inputLead.value.trim()) return showToast('Please enter a message.', 'error');
+            
+            openModal(
+                'Send Broadcast?', 
+                `This will send the message to all tracked leads.`, 
+                () => executeBroadcast()
+            );
+        }
+
+        async function executeBroadcast() {
+            const btn = els.btnSubmitSend;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = 'Sending...';
+            closeModal();
+
+            try {
+                // 1. Fetch dynamic webhook AND user_email from 'clients' table based on client_name
+                // We fetch the email from the DB to ensure it's accurate and available
+                const { data: clientData, error: clientError } = await safeQuery(() => 
+                    supabaseClient
+                        .from('clients')
+                        .select('client_insta_webhook, user_email')
+                        .eq('client_name', AUTHENTICATED_USER.client_name) // Using authenticated client_name
+                        .single()
+                );
+
+                if (clientError || !clientData || !clientData.client_insta_webhook) {
+                    console.error("Client fetch error:", clientError);
+                    throw new Error('Could not fetch webhook URL or email from clients table.');
+                }
+
+                const targetWebhookUrl = clientData.client_insta_webhook;
+                // Use DB email, fall back to auth email, finally a placeholder if both missing
+                const targetEmail = clientData.user_email || AUTHENTICATED_USER.email || 'email_not_found';
+                
+                console.log('Sending to dynamic webhook:', targetWebhookUrl);
+                console.log('Included Email:', targetEmail);
+
+                // 2. Determine Next ID for DB
+                const { data: last } = await supabaseClient.from(STATE.tableName).select('id').order('id', {ascending: false}).limit(1).maybeSingle();
+                let nextId = last ? last.id + 1 : 2;
+                if(nextId === 1) nextId = 2;
+
+                const payload = {
+                    id: nextId,
+                    lead_message: els.inputLead.value,
+                    question_message: null,
+                    user_email: targetEmail // Save accurate email with broadcast record
+                };
+
+                // 3. Send Webhook
+                await fetch(targetWebhookUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        ...payload, 
+                        target_audience: 'leads',
+                        client_name: AUTHENTICATED_USER.client_name,
+                        user_email: targetEmail // Explicitly sent in webhook
+                    })
+                });
+
+                // 4. Insert into Database (Dynamic Table)
+                const { error } = await supabaseClient.from(STATE.tableName).insert([payload]);
+                if (error) throw error;
+
+                showToast('Broadcast sent successfully', 'success');
+                els.inputLead.value = '';
+                updateCharCount(els.inputLead, els.broadcastCharCount);
+
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Broadcast failed', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+
+        // --- TAB 4: BANNED ---
+        async function fetchBannedUsers() {
+            STATE.banned.loading = true;
+            els.loaderBanned.classList.remove('hidden');
+            els.bannedList.innerHTML = '';
+
+            const { data, error } = await safeQuery(() => 
+                supabaseClient
+                    .from(STATE.tableName)
+                    .select('id, banned_ids')
+                    .eq('user_email', AUTHENTICATED_USER.email) // Filter by user_email
+                    .not('banned_ids', 'is', null)
+                    .order('id', {ascending: false})
+            );
+
+            els.loaderBanned.classList.add('hidden');
+            STATE.banned.loading = false;
+
+            if (data) {
+                STATE.banned.allData = data; // Cache for search
+                renderBannedList(data);
+                els.banCount.textContent = data.length;
+            }
+        }
+
+        function renderBannedList(list) {
+            els.bannedList.innerHTML = '';
+            if(list.length === 0) {
+                document.getElementById('empty-banned').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('empty-banned').classList.add('hidden');
+
+            list.forEach(row => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center justify-between p-3 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700';
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/30 text-red-500 flex items-center justify-center font-bold">!</div>
+                        <div>
+                            <div class="text-sm font-bold text-slate-700 dark:text-slate-200">${escapeHtml(row.banned_ids)}</div>
+                            <div class="text-[10px] text-slate-400">Row #${row.id}</div>
+                        </div>
+                    </div>
+                    <button onclick="confirmUnban(${row.id})" class="text-xs text-slate-400 hover:text-green-500 font-medium px-3 py-1 transition-colors">Unban</button>
+                `;
+                els.bannedList.appendChild(div);
+            });
+        }
+
+        function filterBannedList() {
+            const term = els.searchBanned.value.toLowerCase();
+            const filtered = STATE.banned.allData.filter(item => 
+                (item.banned_ids && item.banned_ids.toLowerCase().includes(term)) || item.id.toString().includes(term)
+            );
+            renderBannedList(filtered);
+        }
+
+        function confirmBan(id) {
+            openModal('Ban User?', `Are you sure you want to ban ID: ${id}?`, () => executeBan(id));
+        }
+
+        function banIdManually() {
+            const id = els.inputBanId.value.trim();
+            if(!id) return;
+            confirmBan(id);
+        }
+
+        async function executeBan(id) {
+            closeModal();
+            // Get Next ID Logic (Simplified)
+            const { data: last } = await supabaseClient.from(STATE.tableName).select('id').order('id', {ascending: false}).limit(1).maybeSingle();
+            let nextId = last ? last.id + 1 : 2;
+            if(nextId === 1) nextId = 2;
+
+            const { error } = await safeQuery(() => 
+                supabaseClient.from(STATE.tableName).insert([{ 
+                    id: nextId, 
+                    banned_ids: id,
+                    user_email: AUTHENTICATED_USER.email // Associate ban with user email
+                }])
+            );
+
+            if(!error) {
+                showToast(`Banned ID: ${id}`, 'success');
+                if(els.inputBanId.value === id) els.inputBanId.value = '';
+                if(!els.bannedList.offsetParent) return; // Only refresh if tab visible
+                fetchBannedUsers();
+            }
+        }
+
+        function confirmUnban(rowId) {
+            openModal('Unban User?', 'This will allow the user to interact again.', async () => {
+                closeModal();
+                const { error } = await safeQuery(() => 
+                    supabaseClient.from(STATE.tableName).delete().eq('id', rowId)
+                );
+                if(!error) {
+                    showToast('User unbanned', 'success');
+                    fetchBannedUsers();
+                }
+            });
+        }
+
+        // --- UI UTILS ---
+        function updateCharCount(input, display) {
+            display.textContent = input.value.length;
+        }
+
+        function toggleSidebar() {
+            document.body.classList.toggle('sidebar-collapsed');
+            localStorage.setItem('sidebarCollapsed', document.body.classList.contains('sidebar-collapsed'));
+        }
+
+        function initTheme() {
+            if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+            if (localStorage.sidebarCollapsed === 'true') {
+                document.body.classList.add('sidebar-collapsed');
+            }
+        }
+        function toggleDarkMode() {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.theme = isDark ? 'dark' : 'light';
+        }
+
+        function copyToClipboard() {
+            navigator.clipboard.writeText(els.promptInput.value);
+            showToast('Copied to clipboard', 'success');
+        }
+        
+        function setStatus(status) {
+            if (status === 'connected') {
+                els.statusIndicator.classList.remove('bg-slate-300', 'bg-red-500', 'dark:bg-slate-600');
+                els.statusIndicator.classList.add('bg-green-500', 'status-pulse');
+                els.statusText.textContent = 'Connected';
+            } else if (status === 'error') {
+                els.statusIndicator.classList.remove('bg-slate-300', 'bg-green-500', 'status-pulse', 'dark:bg-slate-600');
+                els.statusIndicator.classList.add('bg-red-500');
+                els.statusText.textContent = 'Connection Error';
+            } else {
+                els.statusIndicator.classList.remove('bg-green-500', 'status-pulse', 'bg-red-500');
+                els.statusIndicator.classList.add('bg-slate-300', 'dark:bg-slate-600');
+                els.statusText.textContent = 'Disconnected';
+            }
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            const color = type === 'success' ? 'bg-slate-900 dark:bg-slate-800 border-l-4 border-green-500' : 'bg-red-600 border-l-4 border-red-800';
+            
+            toast.className = `${color} text-white px-4 py-3 rounded shadow-xl flex items-center gap-3 transform translate-y-5 opacity-0 transition-all duration-300 min-w-[300px] z-50`;
+            toast.innerHTML = `<span class="text-sm font-medium">${message}</span>`;
+            
+            els.toastContainer.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.remove('translate-y-5', 'opacity-0'));
+            setTimeout(() => {
+                toast.classList.add('opacity-0', '-translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            return text.replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[m]);
+        }
+
+        // --- MODAL SYSTEM ---
+        let pendingAction = null;
+        function openModal(title, msg, action) {
+            els.modalTitle.textContent = title;
+            els.modalMsg.textContent = msg;
+            pendingAction = action;
+            
+            els.modal.classList.remove('hidden');
+            requestAnimationFrame(() => {
+                document.getElementById('confirm-modal-content').classList.remove('scale-95', 'opacity-0');
+                document.getElementById('confirm-modal-content').classList.add('scale-100', 'opacity-100');
+            });
+
+            els.confirmBtn.onclick = () => { if(pendingAction) pendingAction(); };
+        }
+
+        function closeModal() {
+            document.getElementById('confirm-modal-content').classList.add('scale-95', 'opacity-0');
+            setTimeout(() => els.modal.classList.add('hidden'), 200);
+            pendingAction = null;
+        }
+    </script>
+</body>
+</html>

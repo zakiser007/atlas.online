@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ATLAS Audience</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Fix: Safely configure Tailwind
+      window.addEventListener('load', function() {
+        if (typeof tailwind !== 'undefined') {
+          tailwind.config = {
+            darkMode: 'class',
+            theme: {
+              extend: {
+                colors: {
+                  gray: {
+                    750: '#2d3748',
+                    850: '#1a202c', 
+                    950: '#0d1117',
+                  },
+                  atlas: {
+                    pink: '#db2777',
+                    blue: '#2563eb',
+                    green: '#16a34a',
+                    red: '#dc2626'
+                  }
+                },
+                screens: {
+                    'xs': '475px',
+                }
+              }
+            }
+          }
+        }
+      });
+    </script>
+    
+    <!-- Babel for JSX support -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom": "https://esm.sh/react-dom@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2"
+        }
+    }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* Mobile Optimizations */
+        @media (max-width: 640px) {
+            .modal-content { height: 100vh; max-height: 100vh; border-radius: 0; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useCallback } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { createClient } from '@supabase/supabase-js';
+        import { 
+          LayoutDashboard, MessageSquare, Users, BarChart3, Settings, 
+          Zap, Bell, Search, Sun, Moon, AlertCircle, CheckCircle2, 
+          Instagram, RefreshCw, Database, Clock, Calendar, 
+          Filter, Download, ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+          X, LogOut, Menu, MoreVertical, SlidersHorizontal
+        } from 'lucide-react';
+
+        // ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+        // AUTHENTICATION CHECK
+        // ════════════════════════════════════════════════════════════════════════════════════════════════════════════
+        const AUTH_CONFIG = {
+            storageKey: 'atlas_auth',
+            loginPage: 'login.html',
+            sessionDuration: 24 * 60 * 60 * 1000 // 24 hours
+        };
+
+        function checkAuthentication() {
+            const authDataRaw = localStorage.getItem(AUTH_CONFIG.storageKey);
+            if (!authDataRaw) {
+                try { window.location.href = AUTH_CONFIG.loginPage; } catch (e) {}
+                return null; 
+            }
+            try {
+                const authData = JSON.parse(authDataRaw);
+                if (!authData.authenticated || !authData.client_id || !authData.timestamp) throw new Error("Invalid Auth");
+                if (Date.now() - authData.timestamp > AUTH_CONFIG.sessionDuration) throw new Error("Expired");
+                return authData;
+            } catch (e) {
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                try { window.location.href = AUTH_CONFIG.loginPage; } catch (err) {}
+                return null;
+            }
+        }
+
+        const AUTHENTICATED_USER = checkAuthentication();
+
+        function handleLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                try { window.location.href = AUTH_CONFIG.loginPage; } catch (e) { window.location.reload(); }
+            }
+        }
+
+        // --- Utility Functions ---
+        const formatDate = (dateString) => {
+            if (!dateString) return '';
+            const date = new Date(dateString);
+            const now = new Date();
+            const isToday = date.toDateString() === now.toDateString();
+            
+            if (isToday) {
+                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            }
+            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        };
+
+        const formatFullDate = (dateString) => {
+            if (!dateString) return '';
+            return new Date(dateString).toLocaleString([], { 
+                weekday: 'short', year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' 
+            });
+        };
+
+        // --- Components ---
+
+        const SidebarItem = ({ icon: Icon, label, href, active = false, onClick }) => {
+            const baseClasses = "flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative";
+            const activeClasses = active 
+                ? "bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-medium" 
+                : "text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200";
+
+            if (onClick) {
+                return (
+                    <button onClick={onClick} className={`${baseClasses} ${activeClasses} w-full`}>
+                        <Icon size={20} />
+                        <span>{label}</span>
+                    </button>
+                );
+            }
+            return (
+                <a href={href} className={`${baseClasses} ${activeClasses}`}>
+                    <Icon size={20} />
+                    <span>{label}</span>
+                </a>
+            );
+        };
+
+        const Sidebar = ({ isOpen, setIsOpen }) => (
+            <>
+                {/* Mobile Overlay */}
+                {isOpen && (
+                    <div 
+                        className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+                        onClick={() => setIsOpen(false)}
+                    />
+                )}
+                
+                {/* Sidebar Container */}
+                <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-300 transform md:relative md:translate-x-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                    <div className="p-6 flex items-center justify-between">
+                        <div className="flex items-center gap-3 px-2">
+                            <div className="bg-indigo-600 p-2 rounded-lg shadow-indigo-200 dark:shadow-none shadow-sm">
+                                <Zap className="text-white" size={20} />
+                            </div>
+                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">
+                                ATLAS
+                            </span>
+                        </div>
+                        <button onClick={() => setIsOpen(false)} className="md:hidden text-gray-500">
+                            <X size={24} />
+                        </button>
+                    </div>
+
+                    <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+                        <SidebarItem icon={LayoutDashboard} label="Dashboard" href="index.html" />
+                        <SidebarItem icon={Users} label="Audience" href="audience.html" active />
+                        <SidebarItem icon={BarChart3} label="Analytics" href="analytics.html" />
+                        <SidebarItem icon={Settings} label="Settings" href="settings.html" />
+                    </nav>
+
+                    <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                        <div className="flex items-center gap-3 px-3 py-3 rounded-lg bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm mb-3">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center text-indigo-600 dark:text-indigo-400 font-bold text-xs ring-2 ring-white dark:ring-gray-700">
+                                {AUTHENTICATED_USER?.client_name?.[0] || 'A'}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                    {AUTHENTICATED_USER?.client_name || 'Admin'}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                    Connected
+                                </p>
+                            </div>
+                        </div>
+                        <button 
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 px-3 py-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 w-full transition-colors font-medium"
+                        >
+                            <LogOut size={16} />
+                            <span>Sign Out</span>
+                        </button>
+                    </div>
+                </div>
+            </>
+        );
+
+        const StatCard = ({ title, value, icon: Icon, colorClass, subtext }) => (
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex items-center gap-4 transition-all hover:shadow-md">
+                <div className={`p-3 rounded-xl ${colorClass} bg-opacity-10 shrink-0`}>
+                    <Icon size={24} className={colorClass.replace('bg-', 'text-')} />
+                </div>
+                <div className="min-w-0">
+                    <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider truncate">{title}</h3>
+                    <div className="text-2xl font-bold text-gray-900 dark:text-white truncate">{value}</div>
+                    {subtext && <div className="text-xs text-gray-400 mt-1 truncate">{subtext}</div>}
+                </div>
+            </div>
+        );
+
+        const LeadDetailsModal = ({ lead, onClose }) => {
+            if (!lead) return null;
+            
+            return (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center md:p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-gray-800 w-full h-full md:h-auto md:max-h-[90vh] md:max-w-lg md:rounded-2xl shadow-2xl flex flex-col overflow-hidden modal-content">
+                        <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-gray-700 shrink-0">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                Lead Details
+                            </h3>
+                            <button onClick={onClose} className="p-2 -mr-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700">
+                                <div className="w-12 h-12 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg">
+                                    {lead.name[0]?.toUpperCase()}
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-gray-900 dark:text-white">{lead.name}</h2>
+                                    <p className="text-sm text-indigo-600 dark:text-indigo-400 font-medium">{lead.contact}</p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-3 bg-gray-50 dark:bg-gray-700/20 rounded-lg">
+                                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider">Source</label>
+                                    <div className="mt-1 flex items-center gap-2 capitalize text-gray-900 dark:text-white font-medium">
+                                        <Instagram size={14} className="text-pink-500" />
+                                        {lead.source}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 dark:bg-gray-700/20 rounded-lg">
+                                    <label className="text-xs text-gray-500 uppercase font-bold tracking-wider">Date</label>
+                                    <div className="mt-1 text-gray-900 dark:text-white font-medium text-sm">
+                                        {formatFullDate(lead.date)}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white dark:bg-gray-800 rounded-lg">
+                                <label className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2 block">Message History</label>
+                                <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-xl border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
+                                    {lead.details}
+                                </div>
+                            </div>
+                            
+                            <div className="pt-2 text-xs text-gray-400 font-mono text-center">
+                                System ID: {lead.id}
+                            </div>
+                        </div>
+
+                        <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 shrink-0">
+                            <button onClick={onClose} className="w-full py-3 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 shadow-sm transition-all active:scale-[0.98]">
+                                Close Details
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const LeadCard = ({ lead, onClick }) => (
+            <div 
+                onClick={onClick} 
+                className="group bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md active:scale-[0.99] transition-all cursor-pointer"
+            >
+                <div className="flex justify-between items-start mb-3">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold">
+                            {lead.name[0]?.toUpperCase()}
+                        </div>
+                        <div>
+                            <h4 className="font-bold text-gray-900 dark:text-white text-sm leading-tight">{lead.name}</h4>
+                            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-medium mt-0.5">{lead.contact}</p>
+                        </div>
+                    </div>
+                    <span className="text-[10px] font-medium text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full whitespace-nowrap">
+                        {formatDate(lead.date)}
+                    </span>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-lg mb-3">
+                    <p className="text-xs text-gray-600 dark:text-gray-400 line-clamp-2 leading-relaxed">
+                        {lead.details}
+                    </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                        <Instagram size={14} className="text-pink-600" />
+                        <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Instagram</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs text-indigo-600 dark:text-indigo-400 font-medium group-hover:translate-x-1 transition-transform">
+                        View <ChevronRight size={14} />
+                    </div>
+                </div>
+            </div>
+        );
+
+        const AudienceView = () => {
+            // UI State
+            const [sidebarOpen, setSidebarOpen] = useState(false);
+            const [showFilters, setShowFilters] = useState(false);
+            const [selectedLead, setSelectedLead] = useState(null);
+
+            // Data State
+            const [leads, setLeads] = useState([]);
+            const [isLoading, setIsLoading] = useState(true);
+            const [errorMsg, setErrorMsg] = useState('');
+
+            // Supabase State
+            const [supabase, setSupabase] = useState(null);
+
+            // Filter/Sort/Paginate State
+            const [searchQuery, setSearchQuery] = useState('');
+            const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+            const [filters, setFilters] = useState({ startDate: '', endDate: '' });
+            const [currentPage, setCurrentPage] = useState(1);
+            const itemsPerPage = 15;
+
+            // Stats State
+            const [stats, setStats] = useState({ last24h: 0, lastMonth: 0, topPlatform: 'Instagram' });
+
+            // Initialize Supabase
+            useEffect(() => {
+                const initSupabase = async () => {
+                    try {
+                        const resp = await fetch('/.netlify/functions/get-supabase-config');
+                        if (!resp.ok) throw new Error('Failed to load config');
+                        const config = await resp.json();
+                        const client = createClient(config.url, config.key);
+                        setSupabase(client);
+                    } catch (err) {
+                        console.error("Failed to initialize Supabase:", err);
+                        setErrorMsg("System configuration error. Please try refreshing.");
+                        setIsLoading(false);
+                    }
+                };
+                initSupabase();
+            }, []);
+
+            // Fetch Data
+            const fetchLeads = useCallback(async () => {
+                if (!supabase) return; // Wait for initialization
+
+                setIsLoading(true);
+                setErrorMsg('');
+
+                if (!AUTHENTICATED_USER) {
+                    setIsLoading(false);
+                    return;
+                }
+
+                try {
+                    const userEmail = AUTHENTICATED_USER.email;
+                    console.log("[Data Fetch] Filtering by user_email:", userEmail);
+
+                    const { data, error } = await supabase
+                        .from('insta')
+                        .select('*')
+                        .eq('user_email', userEmail)
+                        .order('created_at', { ascending: false });
+
+                    if (error) throw error;
+                    
+                    if (data) {
+                        const normalizedLeads = data.map(item => {
+                            let name = item.lead_name || item.full_name || item.username || item.lead_id || 'Instagram User';
+                            let contact = item.lead_contact || (item.username ? `@${item.username}` : '');
+                            let details = item.lead_message || 'No message';
+                            const lid = (item.lead_id || item.instagram_id) ? `[ID: ${item.lead_id || item.instagram_id}] ` : '';
+                            
+                            return {
+                                id: item.id,
+                                source: 'instagram',
+                                name: name,
+                                contact: contact,
+                                details: `${lid}${details}`,
+                                date: item.created_at,
+                                original_lead_id: item.lead_id || item.instagram_id,
+                                is_banned: item.is_banned
+                            };
+                        });
+                        setLeads(normalizedLeads);
+                    } else {
+                        setLeads([]);
+                    }
+                } catch (err) {
+                    console.error("Error fetching leads:", err);
+                    setErrorMsg("Failed to load leads. " + err.message);
+                } finally {
+                    setIsLoading(false);
+                }
+            }, [supabase]);
+
+            useEffect(() => {
+                if (supabase) {
+                    fetchLeads();
+                }
+            }, [fetchLeads, supabase]);
+
+            // Derived State: Stats
+            useEffect(() => {
+                const now = new Date();
+                const oneDayAgo = new Date(now.getTime() - (24 * 60 * 60 * 1000));
+                const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+                let count24h = 0;
+                let count30d = 0;
+
+                leads.forEach(lead => {
+                    const leadDate = new Date(lead.date);
+                    if (leadDate >= oneDayAgo) count24h++;
+                    if (leadDate >= thirtyDaysAgo) count30d++;
+                });
+
+                setStats({
+                    last24h: count24h,
+                    lastMonth: count30d,
+                    topPlatform: 'Instagram'
+                });
+            }, [leads]);
+
+            // Derived State: Filtered & Sorted Leads
+            const processedLeads = useMemo(() => {
+                let result = [...leads];
+
+                // Search
+                if (searchQuery) {
+                    const lowerQ = searchQuery.toLowerCase();
+                    result = result.filter(l => 
+                        String(l.name).toLowerCase().includes(lowerQ) || 
+                        String(l.contact).toLowerCase().includes(lowerQ) ||
+                        String(l.details).toLowerCase().includes(lowerQ)
+                    );
+                }
+
+                // Filters
+                if (filters.startDate) {
+                    result = result.filter(l => new Date(l.date) >= new Date(filters.startDate));
+                }
+                if (filters.endDate) {
+                    const end = new Date(filters.endDate);
+                    end.setHours(23, 59, 59, 999);
+                    result = result.filter(l => new Date(l.date) <= end);
+                }
+
+                // Sort
+                if (sortConfig.key) {
+                    result.sort((a, b) => {
+                        let aVal = a[sortConfig.key];
+                        let bVal = b[sortConfig.key];
+
+                        if (sortConfig.key === 'date') {
+                            aVal = new Date(aVal);
+                            bVal = new Date(bVal);
+                        } else {
+                            aVal = String(aVal).toLowerCase();
+                            bVal = String(bVal).toLowerCase();
+                        }
+
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                }
+
+                return result;
+            }, [leads, searchQuery, filters, sortConfig]);
+
+            // Pagination Logic
+            const totalPages = Math.ceil(processedLeads.length / itemsPerPage);
+            const paginatedLeads = processedLeads.slice(
+                (currentPage - 1) * itemsPerPage,
+                currentPage * itemsPerPage
+            );
+
+            // Reset pagination on filter change
+            useEffect(() => {
+                setCurrentPage(1);
+            }, [searchQuery, filters]);
+
+            const requestSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+                setSortConfig({ key, direction });
+            };
+
+            const downloadCSV = () => {
+                const headers = ['ID', 'Source', 'Name', 'Contact', 'Details', 'Date'];
+                const rows = processedLeads.map(l => [
+                    l.id, l.source,
+                    `"${String(l.name).replace(/"/g, '""')}"`,
+                    `"${String(l.contact).replace(/"/g, '""')}"`,
+                    `"${String(l.details).replace(/"/g, '""')}"`,
+                    l.date
+                ]);
+                const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n" + rows.map(e => e.join(",")).join("\n");
+                const link = document.createElement("a");
+                link.setAttribute("href", encodeURI(csvContent));
+                link.setAttribute("download", "atlas_leads_export.csv");
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            };
+
+            const LoadingSkeleton = () => (
+                <div className="space-y-4">
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm animate-pulse">
+                            <div className="flex justify-between mb-3">
+                                <div className="flex gap-3">
+                                    <div className="w-10 h-10 bg-gray-200 dark:bg-gray-700 rounded-full"></div>
+                                    <div className="space-y-2">
+                                        <div className="h-4 w-32 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                                        <div className="h-3 w-20 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                                    </div>
+                                </div>
+                                <div className="h-4 w-12 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                            </div>
+                            <div className="h-3 w-full bg-gray-200 dark:bg-gray-700 rounded mb-2"></div>
+                            <div className="h-3 w-2/3 bg-gray-200 dark:bg-gray-700 rounded"></div>
+                        </div>
+                    ))}
+                </div>
+            );
+
+            return (
+                <div className="flex h-screen bg-gray-50 dark:bg-gray-900 overflow-hidden">
+                    <Sidebar isOpen={sidebarOpen} setIsOpen={setSidebarOpen} />
+                    
+                    <main className="flex-1 overflow-y-auto overflow-x-hidden relative w-full">
+                        <LeadDetailsModal lead={selectedLead} onClose={() => setSelectedLead(null)} />
+
+                        {/* Mobile Header */}
+                        <div className="sticky top-0 z-30 bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 p-4 md:hidden flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setSidebarOpen(true)} className="p-2 -ml-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800">
+                                    <Menu size={24} />
+                                </button>
+                                <span className="font-bold text-lg text-gray-900 dark:text-white">Audience</span>
+                            </div>
+                            <button onClick={fetchLeads} className="p-2 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400">
+                                <RefreshCw size={20} className={isLoading ? "animate-spin" : ""} />
+                            </button>
+                        </div>
+
+                        <div className="p-4 md:p-8 max-w-7xl mx-auto space-y-6 pb-24 md:pb-8">
+                            
+                            {/* Desktop Header */}
+                            <div className="hidden md:flex items-center justify-between mb-2">
+                                <div>
+                                    <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Audience Overview</h1>
+                                    <p className="text-gray-500 text-sm mt-1">Manage and track your incoming leads.</p>
+                                </div>
+                                <div className="flex gap-2">
+                                     <button 
+                                        onClick={fetchLeads}
+                                        className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                        title="Refresh Data"
+                                    >
+                                        <RefreshCw size={20} className={isLoading ? "animate-spin" : ""} />
+                                    </button>
+                                </div>
+                            </div>
+
+                             {/* Connection Status - Mobile Optimized */}
+                            <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-2 bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-600 dark:text-indigo-400">
+                                            <Database size={20} />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-sm md:text-base font-bold text-gray-800 dark:text-white">
+                                                Client Database
+                                            </h2>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 hidden xs:block">
+                                                Synced with Instagram
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <span className="px-2.5 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-[10px] md:text-xs font-bold border border-green-200 dark:border-green-800 uppercase tracking-wide">
+                                        Active
+                                    </span>
+                                </div>
+                                {errorMsg && (
+                                    <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 text-xs md:text-sm rounded-lg flex items-center gap-2">
+                                        <AlertCircle size={16} className="shrink-0" />
+                                        {errorMsg}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Stats Grid - Mobile Scroll/Grid */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-6">
+                                <StatCard 
+                                    title="24h Leads" 
+                                    value={stats.last24h} 
+                                    icon={Clock} 
+                                    colorClass="text-blue-600 bg-blue-100 dark:text-blue-400 dark:bg-blue-900"
+                                    subtext="New messages"
+                                />
+                                <StatCard 
+                                    title="30 Day Total" 
+                                    value={stats.lastMonth} 
+                                    icon={Calendar} 
+                                    colorClass="text-purple-600 bg-purple-100 dark:text-purple-400 dark:bg-purple-900"
+                                    subtext="Monthly volume"
+                                />
+                                <StatCard 
+                                    title="Top Source" 
+                                    value={stats.topPlatform} 
+                                    icon={Instagram} 
+                                    colorClass="text-orange-600 bg-orange-100 dark:text-orange-400 dark:bg-orange-900"
+                                    subtext="Most active"
+                                />
+                            </div>
+
+                            {/* Controls Bar */}
+                            <div className="flex flex-col gap-4">
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                    <div className="relative w-full md:max-w-md">
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                            <Search size={18} className="text-gray-400" />
+                                        </div>
+                                        <input 
+                                            type="text" 
+                                            placeholder="Search name, message, or id..." 
+                                            value={searchQuery}
+                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                            className="pl-10 h-11 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100 text-sm rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 block w-full shadow-sm"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => setShowFilters(!showFilters)}
+                                            className={`flex-1 md:flex-none flex items-center justify-center gap-2 h-11 px-4 border rounded-xl text-sm font-medium transition-colors ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/30 dark:border-indigo-800 dark:text-indigo-400' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'}`}
+                                        >
+                                            <SlidersHorizontal size={18} />
+                                            <span>Filters</span>
+                                        </button>
+                                        
+                                        <button 
+                                            onClick={downloadCSV}
+                                            className="flex-1 md:flex-none flex items-center justify-center gap-2 h-11 px-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm"
+                                        >
+                                            <Download size={18} />
+                                            <span className="hidden sm:inline">Export</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Collapsible Filters */}
+                                {showFilters && (
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm animate-in slide-in-from-top-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Start Date</label>
+                                                <input 
+                                                    type="date"
+                                                    value={filters.startDate}
+                                                    onChange={(e) => setFilters({...filters, startDate: e.target.value})}
+                                                    className="w-full h-10 px-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">End Date</label>
+                                                <input 
+                                                    type="date" 
+                                                    value={filters.endDate}
+                                                    onChange={(e) => setFilters({...filters, endDate: e.target.value})}
+                                                    className="w-full h-10 px-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-gray-900 dark:text-white focus:ring-indigo-500 focus:border-indigo-500"
+                                                />
+                                            </div>
+                                        </div>
+                                        {(filters.startDate || filters.endDate) && (
+                                            <div className="mt-4 flex justify-end border-t border-gray-100 dark:border-gray-700 pt-3">
+                                                <button 
+                                                    onClick={() => setFilters({ startDate: '', endDate: '' })}
+                                                    className="text-sm text-red-600 dark:text-red-400 hover:text-red-700 font-medium flex items-center gap-1"
+                                                >
+                                                    <X size={14} /> Clear Filters
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Content Area */}
+                            {isLoading ? (
+                                <LoadingSkeleton />
+                            ) : processedLeads.length > 0 ? (
+                                <div className="space-y-4">
+                                    {/* Mobile: Cards */}
+                                    <div className="md:hidden space-y-3">
+                                        {paginatedLeads.map(lead => (
+                                            <LeadCard key={lead.id} lead={lead} onClick={() => setSelectedLead(lead)} />
+                                        ))}
+                                    </div>
+
+                                    {/* Desktop: Table */}
+                                    <div className="hidden md:block bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-sm text-left">
+                                                <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-700/50">
+                                                    <tr>
+                                                        <th className="px-6 py-4 font-bold tracking-wider">Lead Profile</th>
+                                                        <th className="px-6 py-4 font-bold tracking-wider cursor-pointer hover:text-indigo-600" onClick={() => requestSort('contact')}>Contact</th>
+                                                        <th className="px-6 py-4 font-bold tracking-wider">Message</th>
+                                                        <th className="px-6 py-4 font-bold tracking-wider cursor-pointer hover:text-indigo-600" onClick={() => requestSort('date')}>
+                                                            Date {sortConfig.key === 'date' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                                                        </th>
+                                                        <th className="px-6 py-4 text-right">Action</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                                    {paginatedLeads.map((lead) => (
+                                                        <tr key={lead.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-100 to-purple-100 dark:from-indigo-900 dark:to-purple-900 flex items-center justify-center text-indigo-700 dark:text-indigo-300 font-bold text-xs">
+                                                                        {lead.name[0]?.toUpperCase()}
+                                                                    </div>
+                                                                    <div className="font-medium text-gray-900 dark:text-white">{lead.name}</div>
+                                                                </div>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-gray-600 dark:text-gray-300">{lead.contact}</td>
+                                                            <td className="px-6 py-4">
+                                                                <div className="max-w-xs truncate text-gray-500 dark:text-gray-400">{lead.details}</div>
+                                                            </td>
+                                                            <td className="px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400">
+                                                                {formatDate(lead.date)}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <button 
+                                                                    onClick={() => setSelectedLead(lead)}
+                                                                    className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300 font-medium text-xs px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-lg transition-colors"
+                                                                >
+                                                                    View
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* Pagination Controls */}
+                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+                                        <p className="text-sm text-gray-500 dark:text-gray-400 text-center sm:text-left">
+                                            Showing <span className="font-medium text-gray-900 dark:text-white">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-medium text-gray-900 dark:text-white">{Math.min(currentPage * itemsPerPage, processedLeads.length)}</span> of <span className="font-medium text-gray-900 dark:text-white">{processedLeads.length}</span> results
+                                        </p>
+                                        <div className="flex items-center gap-2">
+                                            <button 
+                                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                                disabled={currentPage === 1}
+                                                className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors"
+                                            >
+                                                <ChevronLeft size={20} />
+                                            </button>
+                                            <span className="text-sm font-medium px-2 text-gray-700 dark:text-gray-300">
+                                                Page {currentPage} of {Math.max(1, totalPages)}
+                                            </span>
+                                            <button 
+                                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                                disabled={currentPage === totalPages || totalPages === 0}
+                                                className="p-2 rounded-lg border border-gray-200 dark:border-gray-700 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition-colors"
+                                            >
+                                                <ChevronRight size={20} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center justify-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 text-center px-4">
+                                    <div className="w-16 h-16 bg-gray-50 dark:bg-gray-800 rounded-full flex items-center justify-center mb-4">
+                                        <Search size={32} className="text-gray-400" />
+                                    </div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">No leads found</h3>
+                                    <p className="text-gray-500 dark:text-gray-400 max-w-xs mx-auto">
+                                        We couldn't find any leads matching your current filters or search query.
+                                    </p>
+                                    <button 
+                                        onClick={() => {setSearchQuery(''); setFilters({startDate:'', endDate:''});}}
+                                        className="mt-6 text-indigo-600 dark:text-indigo-400 font-medium hover:underline"
+                                    >
+                                        Clear all filters
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<AudienceView />);
+    </script>
+</body>
+</html>

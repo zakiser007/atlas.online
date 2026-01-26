@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATLAS Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Safety check to prevent ReferenceError if Tailwind fails to load or loads late
+      if (typeof tailwind !== 'undefined') {
+        tailwind.config = {
+          darkMode: 'class',
+          theme: {
+            extend: {
+              colors: {
+                gray: {
+                  750: '#2d3748',
+                  850: '#1a202c', 
+                  950: '#0d1117',
+                },
+                indigo: {
+                  DEFAULT: '#4f46e5',
+                  50: '#eef2ff',
+                  100: '#e0e7ff',
+                  500: '#6366f1',
+                  600: '#4f46e5',
+                  700: '#4338ca',
+                  900: '#312e81',
+                }
+              },
+              screens: {
+                'xs': '475px',
+              }
+            }
+          }
+        }
+      }
+    </script>
+    
+    <!-- Babel for JSX support -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map to resolve React, Icons, and Charts -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom": "https://esm.sh/react-dom@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+            "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom"
+        }
+    }
+    </script>
+
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569; 
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #64748b; 
+        }
+        
+        /* Mobile tap highlight removal */
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200 antialiased overflow-hidden selection:bg-indigo-500 selection:text-white">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { createClient } from '@supabase/supabase-js';
+        import { 
+          LayoutDashboard, 
+          MessageSquare, 
+          Users, 
+          BarChart3, 
+          Settings, 
+          Mail, 
+          Instagram, 
+          Facebook, 
+          Phone, 
+          Zap, 
+          Bell,
+          ToggleLeft, 
+          ToggleRight,
+          RefreshCw,
+          Sun,
+          Moon,
+          AlertCircle,
+          Loader2,
+          CheckCircle2,
+          XCircle,
+          Wifi,
+          WifiOff,
+          ChevronDown,
+          Database,
+          LogIn,
+          ArrowRight,
+          LogOut,
+          Clock,
+          Menu,
+          X
+        } from 'lucide-react';
+        import { 
+          BarChart, 
+          Bar, 
+          XAxis, 
+          YAxis, 
+          CartesianGrid, 
+          Tooltip, 
+          ResponsiveContainer 
+        } from 'recharts';
+
+        /* * AUTHENTICATION TESTING CHECKLIST:
+         * * ✓ Direct URL access without login → Redirects to login.html
+         * ✓ After login → Loads configuration automatically
+         * ✓ Logout button → Clears session and redirects to login
+         * ✓ Session expired (24h) → Redirects to login
+         * ✓ Corrupted localStorage data → Clears and redirects
+         * ✓ All features work without manual client ID entry
+         * ✓ User name displayed correctly in UI
+         * ✓ Navigation between pages maintains session
+         * * File: index.html
+         */
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // AUTHENTICATION CHECK - Must be at the TOP
+        // ═══════════════════════════════════════════════════════════════════════
+        const AUTH_CONFIG = {
+            storageKey: 'atlas_auth',
+            loginPage: 'login.html',
+            sessionDuration: 24 * 60 * 60 * 1000 // 24 hours
+        };
+
+        // Check authentication immediately
+        function checkAuthentication() {
+            const authDataRaw = localStorage.getItem(AUTH_CONFIG.storageKey);
+            
+            if (!authDataRaw) {
+                console.warn('[AUTH] No authentication data found. Redirecting to login.');
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Not authenticated'); // Stop execution
+            }
+            
+            let authData;
+            try {
+                authData = JSON.parse(authDataRaw);
+            } catch (e) {
+                console.error('[AUTH] Corrupted authentication data. Clearing and redirecting.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Invalid auth data');
+            }
+            
+            // Validate required fields
+            if (!authData.authenticated || !authData.client_id || !authData.timestamp) {
+                console.error('[AUTH] Incomplete authentication data. Redirecting to login.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Incomplete auth data');
+            }
+            
+            // Check if session expired
+            const sessionAge = Date.now() - authData.timestamp;
+            if (sessionAge > AUTH_CONFIG.sessionDuration) {
+                console.warn('[AUTH] Session expired. Redirecting to login.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+                throw new Error('Session expired');
+            }
+            
+            console.log('[AUTH] ✓ Authentication valid for user:', authData.client_name);
+            return authData;
+        }
+
+        // Execute check immediately - this stops page load if not authenticated
+        const AUTHENTICATED_USER = checkAuthentication();
+
+        // Logout function for use in components
+        function handleLogout() {
+            if (window.confirm('Are you sure you want to logout?')) {
+                console.log('[AUTH] User logged out');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                window.location.href = AUTH_CONFIG.loginPage;
+            }
+        }
+
+        // Add error boundary for Auth
+        window.addEventListener('error', (event) => {
+            if (event.message && (event.message.includes('Not authenticated') || 
+                event.message.includes('Session expired'))) {
+                event.preventDefault();
+                console.log('[AUTH] Caught authentication error, redirecting...');
+            }
+        });
+
+        // --- Supabase Configuration ---
+        // REMOVED HARDCODED KEYS
+        // Initialized dynamically via Netlify Function in initApp()
+        let supabase = null;
+
+        // --- Helper: Parse String/Boolean to strict Boolean ---
+        const parseBoolean = (value) => {
+            if (value === null || value === undefined) return false;
+            return String(value).toLowerCase() === 'true';
+        };
+
+        // --- Components ---
+
+        // Custom Roman/Greek Pillar Icon (Memoized)
+        const PillarIcon = React.memo(({ size = 20, className = "" }) => (
+          <svg 
+            xmlns="http://www.w3.org/2000/svg" 
+            width={size} 
+            height={size} 
+            viewBox="0 0 24 24" 
+            fill="none" 
+            stroke="currentColor" 
+            strokeWidth="2" 
+            strokeLinecap="round" 
+            strokeLinejoin="round" 
+            className={className}
+          >
+            <path d="M4 4h16" />
+            <path d="M6 6h12" />
+            <path d="M6 18h12" />
+            <path d="M4 20h16" />
+            <line x1="8" x2="8" y1="6" y2="18" />
+            <line x1="12" x2="12" y1="6" y2="18" />
+            <line x1="16" x2="16" y1="6" y2="18" />
+          </svg>
+        ));
+
+        // Channel Icon Component (Memoized)
+        const ChannelIcon = React.memo(({ channel, size = 18 }) => {
+          switch (channel) {
+            case 'instagram': return <Instagram size={size} className="text-pink-600 dark:text-pink-400" />;
+            case 'messenger': return <Facebook size={size} className="text-blue-600 dark:text-blue-400" />;
+            case 'whatsapp': return <Phone size={size} className="text-green-500 dark:text-green-400" />; 
+            case 'email': return <Mail size={size} className="text-red-500 dark:text-red-400" />;
+            default: return <MessageSquare size={size} className="text-gray-500 dark:text-gray-400" />;
+          }
+        });
+
+        // Toast Notification Component
+        const Toast = React.memo(({ message, type, onClose }) => {
+          useEffect(() => {
+            const timer = setTimeout(onClose, 3000);
+            return () => clearTimeout(timer);
+          }, [onClose]);
+
+          const styles = {
+            success: 'bg-green-100 text-green-800 dark:bg-green-900/80 dark:text-green-300 border-green-200 dark:border-green-800',
+            error: 'bg-red-100 text-red-800 dark:bg-red-900/80 dark:text-red-300 border-red-200 dark:border-red-800',
+            info: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/80 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800'
+          };
+
+          const Icons = {
+            success: CheckCircle2,
+            error: XCircle,
+            info: AlertCircle
+          };
+
+          const Icon = Icons[type] || Icons.info;
+
+          return (
+            <div className={`fixed bottom-6 right-6 ${styles[type]} px-4 py-3 rounded-xl shadow-lg border flex items-center gap-3 animate-in slide-in-from-bottom-5 z-[60]`}>
+              <Icon size={20} />
+              <span className="font-medium text-sm">{message}</span>
+            </div>
+          );
+        });
+
+        // Stat Card Component (New reusable component)
+        const StatCard = React.memo(({ id, label, comingSoon, isActive, onToggle, isLoading }) => {
+            return (
+                <div 
+                    onClick={() => window.location.href = `${id}.html`}
+                    className="group relative p-5 rounded-2xl shadow-sm border bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-lg transition-all cursor-pointer overflow-hidden active:scale-95 duration-200"
+                >
+                    {/* Status Dot */}
+                    <div className={`absolute top-4 right-4 w-2.5 h-2.5 rounded-full transition-colors duration-500 ${isActive ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-gray-300 dark:bg-gray-600'}`} />
+
+                    <div className="flex items-center gap-4">
+                        <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-gray-700/50 group-hover:bg-indigo-50 dark:group-hover:bg-indigo-900/20 transition-colors">
+                            <ChannelIcon channel={id} size={28} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="text-base font-bold text-gray-800 dark:text-gray-100 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{label}</h3>
+                                {comingSoon && (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400 uppercase tracking-wide">
+                                        Soon
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1.5" onClick={(e) => e.stopPropagation()}>
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-16">
+                                    {isLoading ? 'Syncing...' : (isActive ? 'AI Active' : 'AI Offline')}
+                                </span>
+                                {isLoading ? (
+                                    <Loader2 size={16} className="animate-spin text-gray-400 ml-1" />
+                                ) : (
+                                    <button 
+                                        onClick={() => onToggle(id)}
+                                        className={`relative inline-flex h-5 w-9 min-w-[36px] items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 dark:focus:ring-offset-gray-900 ${isActive ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-600'}`}
+                                        aria-label={`Toggle ${label}`}
+                                    >
+                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isActive ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        });
+
+        // Analytics View (Memoized)
+        const AnalyticsView = React.memo(({ tableConfig }) => {
+          const [data, setData] = useState([]);
+          const [loading, setLoading] = useState(true);
+          const [totalMessages, setTotalMessages] = useState(0);
+          const [error, setError] = useState(null);
+          const [timeRange, setTimeRange] = useState('Last 30 Days');
+
+          useEffect(() => {
+            const fetchData = async () => {
+              if (!tableConfig) return;
+              
+              try {
+                setLoading(true);
+                // Fetch from hardcoded 'insta' table as per requirement
+                const { data: messages, error: supabaseError } = await supabase
+                  .from('insta') 
+                  .select('created_at, lead_message')
+                  .not('lead_message', 'is', null);
+                
+                if (supabaseError) throw supabaseError;
+
+                const combined = messages || [];
+                setTotalMessages(combined.length);
+
+                // Aggregate by date
+                const agg = combined.reduce((acc, curr) => {
+                  if (!curr.created_at) return acc;
+                  const isoDate = new Date(curr.created_at).toISOString().split('T')[0];
+                  acc[isoDate] = (acc[isoDate] || 0) + 1;
+                  return acc;
+                }, {});
+
+                const chartData = Object.keys(agg)
+                  .sort()
+                  .map(isoDate => ({
+                    date: new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                    fullDate: isoDate,
+                    count: agg[isoDate]
+                  }));
+
+                setData(chartData.slice(-30)); 
+
+              } catch (err) {
+                console.error('Error loading analytics:', err);
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            };
+
+            fetchData();
+          }, [timeRange, tableConfig]);
+
+          if (!tableConfig || loading) {
+            return (
+              <div className="flex flex-col items-center justify-center h-96">
+                <Loader2 size={32} className="animate-spin text-indigo-600 mb-4" />
+                <p className="text-gray-500 dark:text-gray-400 animate-pulse">Analyzing data streams...</p>
+              </div>
+            );
+          }
+
+          if (error) {
+             return (
+               <div className="flex flex-col items-center justify-center h-96 text-red-500">
+                 <AlertCircle size={48} className="mb-4 opacity-50" />
+                 <p className="font-medium">Failed to load analytics data</p>
+                 <p className="text-sm opacity-75 mt-2 max-w-md text-center bg-red-50 dark:bg-red-900/20 p-2 rounded">{error}</p>
+               </div>
+             )
+          }
+
+          if (data.length === 0) {
+             return (
+              <div className="flex flex-col items-center justify-center h-96 text-gray-400 dark:text-gray-500">
+                <BarChart3 size={48} className="mb-4 opacity-20" />
+                <p className="font-medium">No message activity recorded</p>
+                <p className="text-sm mt-1">Data from 'insta' will appear here.</p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-6 animate-in fade-in duration-500">
+               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 rounded-xl">
+                      <MessageSquare size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Total Messages</p>
+                      <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{totalMessages}</h3>
+                    </div>
+                 </div>
+                 
+                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex items-center gap-4">
+                    <div className="p-3 bg-green-50 dark:bg-green-900/30 text-green-600 rounded-xl">
+                      <Zap size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Active Channels</p>
+                      <h3 className="text-2xl font-bold text-gray-900 dark:text-white">4</h3>
+                    </div>
+                 </div>
+               </div>
+
+               <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm">
+                  <div className="flex items-center justify-between mb-8 flex-wrap gap-4">
+                    <div>
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white">Message Volume</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Aggregated by date</p>
+                    </div>
+                    <div className="relative">
+                        <select 
+                            value={timeRange}
+                            onChange={(e) => setTimeRange(e.target.value)}
+                            className="appearance-none bg-gray-50 dark:bg-gray-700 border-none text-sm font-medium rounded-lg pl-3 pr-8 py-2 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 cursor-pointer min-w-[140px]"
+                        >
+                            <option>Last 30 Days</option>
+                            <option>Last 7 Days</option>
+                            <option>All Time</option>
+                        </select>
+                        <ChevronDown size={14} className="absolute right-3 top-3 text-gray-400 pointer-events-none" />
+                    </div>
+                  </div>
+                  
+                  <div className="h-80 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#374151" opacity={0.1} />
+                        <XAxis 
+                          dataKey="date" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                          dy={10}
+                        />
+                        <YAxis 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: '#9ca3af', fontSize: 12 }} 
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#1f2937', 
+                            border: 'none', 
+                            borderRadius: '12px', 
+                            color: '#f3f4f6',
+                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1)'
+                          }}
+                          cursor={{ fill: 'rgba(99, 102, 241, 0.1)' }}
+                        />
+                        <Bar 
+                          dataKey="count" 
+                          name="Messages" 
+                          fill="#4f46e5" 
+                          radius={[4, 4, 0, 0]} 
+                          barSize={32}
+                          animationDuration={1500}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+               </div>
+            </div>
+          );
+        });
+
+        // Main Dashboard Component
+        function AtlasDashboard() {
+          const [activeTab, setActiveTab] = useState('dashboard');
+          const [botToggles, setBotToggles] = useState({ 
+            instagram: false, 
+            messenger: false, 
+            whatsapp: false, 
+            email: false 
+          });
+          const [clientConfig, setClientConfig] = useState(null);
+          const [clientName, setClientName] = useState('');
+          const [isConfigLoading, setIsConfigLoading] = useState(true);
+          const [loadingToggles, setLoadingToggles] = useState(true);
+          const [isSidebarOpen, setSidebarOpen] = useState(true); // Desktop toggle
+          const [isMobileSidebarOpen, setMobileSidebarOpen] = useState(false); // Mobile toggle
+          const [isDarkMode, setIsDarkMode] = useState(false);
+          const [toast, setToast] = useState(null); 
+          const [realtimeStatus, setRealtimeStatus] = useState('CONNECTING');
+          const [needsSetup, setNeedsSetup] = useState(false);
+          const [trialDays, setTrialDays] = useState(null);
+
+          // Initialize Dark Mode
+          useEffect(() => {
+            const savedMode = localStorage.getItem('atlas_dark_mode');
+            if (savedMode === 'true') {
+                setIsDarkMode(true);
+                document.documentElement.classList.add('dark');
+            }
+          }, []);
+
+          // Toggle Theme
+          const toggleTheme = useCallback(() => {
+            const newMode = !isDarkMode;
+            setIsDarkMode(newMode);
+            localStorage.setItem('atlas_dark_mode', newMode);
+            if (newMode) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          }, [isDarkMode]);
+
+          // --- 1. Initial Load from Session ---
+          useEffect(() => {
+            const loadConfigFromSession = async () => {
+                setIsConfigLoading(true);
+                try {
+                    setClientName(AUTHENTICATED_USER.client_name);
+
+                    console.log('[ATLAS] Attempting lookup with:', {
+                        client_name: AUTHENTICATED_USER.client_name,
+                        client_id: AUTHENTICATED_USER.client_id,
+                        email: AUTHENTICATED_USER.email, // ADDED: Log email
+                        timestamp: new Date().toISOString()
+                    });
+
+                    // PRIMARY LOOKUP: Use email as the main identifier
+                    const userEmail = AUTHENTICATED_USER.email;
+                    
+                    console.log('[ATLAS] Looking up user by email:', userEmail);
+
+                    // Query using email (most reliable identifier)
+                    const { data: clientData, error } = await supabase
+                        .from('clients')
+                        .select('verf_state, User_Email, days_left, client_name')
+                        .eq('User_Email', userEmail)
+                        .maybeSingle();
+
+                    if (error) {
+                        console.error('[ATLAS] Client Query Error:', error);
+                    }
+
+                    let requiresSetup = false;
+
+                    if (clientData) {
+                        console.log('[ATLAS] ✅ Client profile found:', clientData.User_Email);
+                        console.log('[ATLAS] Database client_name:', clientData.client_name);
+                        console.log('[ATLAS] Auth client_name:', AUTHENTICATED_USER.client_name);
+                        console.log('[ATLAS] Verification state:', clientData.verf_state, 'Type:', typeof clientData.verf_state);
+                        
+                        // Store days left
+                        if (clientData.days_left !== undefined && clientData.days_left !== null) {
+                            setTrialDays(clientData.days_left);
+                            console.log('[ATLAS] Trial days:', clientData.days_left);
+                        }
+
+                        // Check verification state - handle both string and boolean
+                        const isVerified = clientData.verf_state === true || 
+                                           clientData.verf_state === 'true' || 
+                                           String(clientData.verf_state).toLowerCase() === 'true';
+                        
+                        console.log('[ATLAS] Is verified:', isVerified);
+
+                        if (isVerified) {
+                            requiresSetup = false;
+                            console.log('[ATLAS] Account is verified ✓');
+                        } else {
+                            // Check dev_app for override using email
+                            console.log('[ATLAS] Not verified, checking dev_app for:', userEmail);
+                            
+                            const { data: devAppEntry, error: devError } = await supabase
+                                    .from('dev_app')
+                                    .select('id, insta_page_token, insta_page_id')
+                                    .eq('client_email', userEmail)
+                                    .maybeSingle();
+
+                            if (devError) {
+                                console.error('[ATLAS] Dev_app query error:', devError);
+                            }
+
+                            // Check if dev_app entry exists AND has required fields
+                            if (devAppEntry && devAppEntry.insta_page_token && devAppEntry.insta_page_id) {
+                                console.log('[ATLAS] Found complete config in dev_app. Auto-verifying...');
+                                
+                                // Update verification state using email
+                                const { error: updateError } = await supabase
+                                    .from('clients')
+                                    .update({ verf_state: 'true' })
+                                    .eq('User_Email', userEmail);
+                                
+                                if (updateError) {
+                                    console.error('[ATLAS] Failed to auto-verify:', updateError);
+                                } else {
+                                    console.log('[ATLAS] Account auto-verified via dev_app ✓');
+                                }
+                                
+                                requiresSetup = false;
+                            } else {
+                                console.log('[ATLAS] Dev_app entry incomplete or missing');
+                                requiresSetup = true;
+                            }
+                        }
+                    } else {
+                        // No client data found
+                        console.warn('[ATLAS] ❌ No client profile found for email:', userEmail);
+                        console.warn('[ATLAS] This usually means:');
+                        console.warn('  1. Email not in clients table');
+                        console.warn('  2. Typo in User_Email column');
+                        console.warn('  3. Case sensitivity mismatch');
+                        requiresSetup = true;
+                    }
+
+                    console.log('[ATLAS] Final needsSetup state:', requiresSetup);
+                    setNeedsSetup(requiresSetup);
+
+                    // Configuration Mapping (unchanged)
+                    const config = {
+                        whatsapp: { name: AUTHENTICATED_USER.tables.whatsapp, col: 'run' },
+                        instagram: { name: AUTHENTICATED_USER.tables.instagram, col: 'is_active' },
+                        messenger: { name: AUTHENTICATED_USER.tables.messenger, col: 'is_active' },
+                        email: { name: AUTHENTICATED_USER.tables.email2, col: 'state' },
+                        prospects: { name: AUTHENTICATED_USER.tables.email, col: 'id' }
+                    };
+
+                    setClientConfig(config);
+                    setIsConfigLoading(false);
+
+                } catch (err) {
+                    console.error('[ATLAS] Config Error:', err);
+                    setToast({ message: `Session Error: ${err.message}`, type: 'error' });
+                    setRealtimeStatus('ERROR');
+                    setIsConfigLoading(false);
+                }
+            };
+
+            loadConfigFromSession();
+          }, []);
+
+          // --- 2. Fetch Data & Realtime (Only after config loads) ---
+          useEffect(() => {
+            if (!clientConfig) return;
+
+            let mounted = true;
+
+            const fetchToggleStates = async () => {
+              try {
+                if (mounted) setLoadingToggles(true);
+                
+                // Build queries dynamically to avoid invalid table errors
+                const queries = [];
+                const keys = [];
+
+                if (clientConfig.whatsapp.name) {
+                    queries.push(supabase.from(clientConfig.whatsapp.name).select(clientConfig.whatsapp.col).eq('id', 1).maybeSingle());
+                    keys.push('whatsapp');
+                }
+                if (clientConfig.instagram.name) {
+                    queries.push(supabase.from(clientConfig.instagram.name).select(clientConfig.instagram.col).eq('id', 1).maybeSingle());
+                    keys.push('instagram');
+                }
+                if (clientConfig.messenger.name) {
+                    queries.push(supabase.from(clientConfig.messenger.name).select(clientConfig.messenger.col).eq('id', 1).maybeSingle());
+                    keys.push('messenger');
+                }
+                if (clientConfig.email.name) {
+                    queries.push(supabase.from(clientConfig.email.name).select(clientConfig.email.col).eq('id', 1).maybeSingle());
+                    keys.push('email');
+                }
+
+                if (queries.length === 0) {
+                    if (mounted) setLoadingToggles(false);
+                    return;
+                }
+
+                const results = await Promise.all(queries);
+
+                if (!mounted) return;
+
+                const newToggles = { ...botToggles };
+
+                results.forEach((res, index) => {
+                    const key = keys[index];
+                    const config = clientConfig[key];
+                    if (res.data) {
+                        newToggles[key] = parseBoolean(res.data[config.col]);
+                    }
+                });
+
+                setBotToggles(newToggles);
+
+              } catch (err) {
+                console.error("[ATLAS] Fetch Error:", err);
+                setToast({ message: "Sync error: check console", type: "error" });
+              } finally {
+                if (mounted) setLoadingToggles(false);
+              }
+            };
+
+            fetchToggleStates();
+
+            // Realtime Subscriptions
+            const channel = supabase.channel('atlas-global-updates');
+            
+            Object.entries(clientConfig).forEach(([key, config]) => {
+                if (!config.name || key === 'prospects') return; 
+                
+                channel.on(
+                    'postgres_changes',
+                    { event: 'UPDATE', schema: 'public', table: config.name, filter: 'id=eq.1' },
+                    (payload) => {
+                        const newVal = payload.new[config.col];
+                        const boolVal = parseBoolean(newVal);
+                        setBotToggles(prev => ({ ...prev, [key]: boolVal }));
+                    }
+                );
+            });
+
+            channel.subscribe((status) => {
+                if (mounted) {
+                   if (status === 'SUBSCRIBED') setRealtimeStatus('SUBSCRIBED');
+                   else if (status === 'CHANNEL_ERROR') setRealtimeStatus('ERROR');
+                   else setRealtimeStatus('CONNECTING');
+                }
+            });
+
+            return () => {
+              mounted = false;
+              supabase.removeChannel(channel);
+            };
+          }, [clientConfig]);
+
+          // Update Bot State in Supabase
+          const toggleBot = useCallback(async (channelKey) => {
+            if (!clientConfig) return;
+
+            const currentValue = botToggles[channelKey];
+            const newValue = !currentValue;
+
+            setBotToggles(prev => ({ ...prev, [channelKey]: newValue }));
+
+            try {
+              const config = clientConfig[channelKey];
+              if (!config) return;
+
+              const stringValue = newValue ? 'true' : 'false';
+
+              const { error } = await supabase
+                .from(config.name)
+                .update({ [config.col]: stringValue })
+                .eq('id', 1);
+
+              if (error) throw error;
+              
+              setToast({ message: `${channelKey.charAt(0).toUpperCase() + channelKey.slice(1)} updated`, type: "success" });
+
+            } catch (err) {
+              console.error(`[ATLAS] Update Error ${channelKey}:`, err);
+              setBotToggles(prev => ({ ...prev, [channelKey]: currentValue }));
+              setToast({ message: "Update failed", type: "error" });
+            }
+          }, [clientConfig, botToggles]);
+
+          const handleNavClick = useCallback((id) => {
+            if (id === 'audience') {
+                window.location.href = 'audience.html';
+            } else if (id === 'settings') {
+                setActiveTab('settings');
+            } else {
+                setActiveTab(id);
+            }
+            setMobileSidebarOpen(false); // Close mobile sidebar on nav
+          }, []);
+
+          // Mobile sidebar backdrop click handler
+          const handleBackdropClick = useCallback(() => {
+            setMobileSidebarOpen(false);
+          }, []);
+
+          const SidebarItem = useCallback(({ id, icon: Icon, label }) => (
+            <button
+              onClick={() => handleNavClick(id)}
+              className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-all duration-200 rounded-lg mb-1 min-h-[44px] ${
+                activeTab === id 
+                  ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+                  : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              <Icon size={20} className={activeTab === id ? 'text-indigo-600 dark:text-indigo-400' : 'opacity-70'} />
+              {(isSidebarOpen || isMobileSidebarOpen) && <span>{label}</span>}
+            </button>
+          ), [activeTab, isSidebarOpen, isMobileSidebarOpen, handleNavClick]);
+
+          const renderDashboard = () => (
+            <div className="animate-in fade-in duration-500 flex flex-col h-full">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+                {[
+                  { id: 'whatsapp', label: 'WhatsApp', color: 'bg-green-500', comingSoon: true },
+                  { id: 'instagram', label: 'Instagram', color: 'bg-pink-500', comingSoon: false },
+                  { id: 'email', label: 'Email', color: 'bg-red-500', comingSoon: true },
+                  { id: 'messenger', label: 'Messenger', color: 'bg-blue-500', comingSoon: true }
+                ].map((item) => (
+                  <StatCard 
+                    key={item.id}
+                    {...item}
+                    isActive={botToggles[item.id]}
+                    isLoading={isConfigLoading || loadingToggles}
+                    onToggle={toggleBot}
+                  />
+                ))}
+              </div>
+              
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl bg-gray-50/50 dark:bg-gray-800/30 p-6 text-center">
+                 <LayoutDashboard size={48} className="mb-4 text-gray-300 dark:text-gray-600" />
+                 <p className="text-sm font-medium">Select a channel above to configure deployment parameters.</p>
+                 <div className="mt-4 flex gap-2 text-xs bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-full text-gray-500">
+                    <Wifi size={14} />
+                    <span>Connected to {clientName || '...'}</span>
+                 </div>
+              </div>
+            </div>
+          );
+
+          if (isConfigLoading) {
+             return (
+                <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900">
+                    <div className="flex flex-col items-center">
+                        <Loader2 size={48} className="animate-spin text-indigo-600 mb-4" />
+                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">Authenticating...</h2>
+                        <p className="text-gray-500 text-sm mt-2">Verifying session and loading profile.</p>
+                    </div>
+                </div>
+             );
+          }
+
+          return (
+            <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans overflow-hidden">
+              
+              {/* Mobile Sidebar Backdrop */}
+              {isMobileSidebarOpen && (
+                <div 
+                    className="fixed inset-0 bg-black/50 z-40 md:hidden backdrop-blur-sm transition-opacity"
+                    onClick={handleBackdropClick}
+                />
+              )}
+
+              {/* Sidebar */}
+              <aside 
+                className={`fixed md:relative inset-y-0 left-0 z-50 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 ease-in-out
+                    ${isMobileSidebarOpen ? 'translate-x-0 w-64' : '-translate-x-full md:translate-x-0'}
+                    ${isSidebarOpen ? 'md:w-64' : 'md:w-20'}
+                `}
+              >
+                <div className="p-6 flex items-center justify-between h-20">
+                   <div className="flex items-center gap-3">
+                       <div className="w-9 h-9 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30 flex-shrink-0">
+                         <PillarIcon size={20} />
+                       </div>
+                       {(isSidebarOpen || isMobileSidebarOpen) && <span className="font-bold text-xl tracking-tight text-gray-800 dark:text-white truncate">ATLAS</span>}
+                   </div>
+                   {/* Mobile Close Button */}
+                   <button onClick={() => setMobileSidebarOpen(false)} className="md:hidden p-2 text-gray-500 hover:bg-gray-100 rounded-lg">
+                       <X size={20} />
+                   </button>
+                </div>
+
+                <div className="px-3 py-2 flex-1 overflow-y-auto">
+                    <nav className="space-y-1">
+                        <SidebarItem id="dashboard" icon={LayoutDashboard} label="Dashboard" />
+                        <SidebarItem id="audience" icon={Users} label="Audience" />
+                        <SidebarItem id="analytics" icon={BarChart3} label="Analytics" />
+                    </nav>
+                </div>
+
+                <div className="p-3 border-t border-gray-100 dark:border-gray-700">
+                  <SidebarItem id="settings" icon={Settings} label="Settings" />
+                  <button 
+                    onClick={() => setSidebarOpen(!isSidebarOpen)} 
+                    className="w-full mt-2 hidden md:flex items-center justify-center p-2 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors min-h-[44px]"
+                  >
+                    {isSidebarOpen ? <ToggleLeft size={24} /> : <ToggleRight size={24} />}
+                  </button>
+                </div>
+              </aside>
+
+              {/* Main Content */}
+              <main className="flex-1 flex flex-col overflow-hidden relative w-full">
+                
+                {/* Header */}
+                <header className="min-h-20 bg-white/80 dark:bg-gray-800/80 backdrop-blur-md border-b border-gray-200 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center px-4 md:px-8 py-3 md:py-0 z-10 gap-3 md:gap-0">
+                  <div className="w-full md:w-auto flex items-center justify-between md:justify-start gap-4">
+                      {/* Mobile Menu Button */}
+                      <button 
+                        onClick={() => setMobileSidebarOpen(true)}
+                        className="md:hidden p-2 -ml-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+                      >
+                          <Menu size={24} />
+                      </button>
+
+                      <div className="flex-1 md:flex-none">
+                          <h1 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white capitalize tracking-tight">
+                            {activeTab}
+                          </h1>
+                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {clientName && (
+                                <span className="flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider">
+                                    <Database size={10} />
+                                    {clientName}
+                                </span>
+                            )}
+                            <span className="hidden xs:inline">{activeTab === 'dashboard' ? 'Overview & Status' : 'Metrics'}</span>
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="w-full md:w-auto flex items-center justify-end gap-3 md:gap-5">
+                    
+                    {/* Trial Days Indicator - Responsive */}
+                    {!needsSetup && trialDays !== null && (
+                        <div className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 md:py-1.5 rounded-full text-[10px] md:text-xs font-semibold border transition-all whitespace-nowrap ${
+                            trialDays <= 3 
+                                ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800' 
+                                : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800'
+                        }`}>
+                            <Clock size={12} className="md:w-3.5 md:h-3.5" />
+                            {trialDays} Days
+                        </div>
+                    )}
+                    
+                    <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-1 hidden md:block"></div>
+
+                    <div className="flex items-center gap-2">
+                        <button 
+                          onClick={toggleTheme} 
+                          className="p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors min-w-[40px] min-h-[40px] flex items-center justify-center"
+                          title="Toggle Theme"
+                        >
+                          {isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
+                        </button>
+
+                        {/* Logout Button (Icon only on mobile) */}
+                        <button 
+                            onClick={handleLogout}
+                            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-500 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 min-h-[40px]"
+                            title="Logout"
+                        >
+                            <LogOut size={20} />
+                            <span className="hidden md:inline font-medium">Logout</span>
+                        </button>
+                    </div>
+                  </div>
+                </header>
+
+                {/* Content Area */}
+                <div className="flex-1 overflow-y-auto p-4 md:p-8 bg-gray-50 dark:bg-gray-900 scroll-smooth">
+                  <div className="max-w-7xl mx-auto w-full">
+                    
+                    {/* Setup Warning Banner - Responsive */}
+                    {needsSetup && (
+                        <div className="mx-auto max-w-7xl mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-sm dark:bg-amber-900/20 dark:border-amber-800">
+                            <div className="flex items-start md:items-center gap-4">
+                                <div className="p-2 bg-amber-100 dark:bg-amber-800/50 rounded-lg text-amber-600 dark:text-amber-400 flex-shrink-0">
+                                    <AlertCircle size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">Account Setup Required</h3>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 md:mt-0">Your account configuration is incomplete. Please finish setting up your profile.</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => window.location.href = 'DEP_SYSTEME.html'}
+                                className="w-full md:w-auto px-6 py-3 md:py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 min-h-[44px]"
+                            >
+                                SET UP ACCOUNT
+                                <ArrowRight size={18} />
+                            </button>
+                        </div>
+                    )}
+
+                    {activeTab === 'dashboard' && renderDashboard()}
+                    {activeTab === 'analytics' && <AnalyticsView tableConfig={clientConfig} />}
+                    
+                    {['settings'].includes(activeTab) && (
+                        <div className="flex flex-col items-center justify-center h-[60vh] text-gray-400 dark:text-gray-500 px-4 text-center">
+                            <RefreshCw size={48} className="mb-4 text-gray-300 dark:text-gray-600" />
+                            <h3 className="text-lg font-medium text-gray-500 dark:text-gray-400">Settings Module</h3>
+                            <p className="text-sm mt-2">Configuration options for {clientName} will appear here.</p>
+                        </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Toasts */}
+                {toast && (
+                  <Toast 
+                    message={toast.message} 
+                    type={toast.type} 
+                    onClose={() => setToast(null)} 
+                  />
+                )}
+
+              </main>
+            </div>
+          );
+        }
+
+        // Initialize App with Secure Config
+        async function initApp() {
+            try {
+                // Fetch credentials from secure serverless function
+                const resp = await fetch('/.netlify/functions/get-supabase-config');
+                if (!resp.ok) throw new Error(`Config fetch failed: ${resp.status} ${resp.statusText}`);
+                
+                const config = await resp.json();
+                
+                if (!config.url || !config.key) {
+                    throw new Error("Invalid configuration received");
+                }
+                
+                // Initialize global supabase client
+                supabase = createClient(config.url, config.key);
+                
+                // Mount React App after initialization
+                const root = createRoot(document.getElementById('root'));
+                root.render(<AtlasDashboard />);
+                
+            } catch (error) {
+                console.error('Critical initialization error:', error);
+                
+                // Fallback UI for fatal errors
+                document.getElementById('root').innerHTML = `
+                    <div style="
+                        display: flex; 
+                        height: 100vh; 
+                        align-items: center; 
+                        justify-content: center; 
+                        background-color: #f9fafb; 
+                        color: #dc2626; 
+                        font-family: system-ui, -apple-system, sans-serif;
+                    ">
+                        <div style="text-align: center; padding: 2rem;">
+                            <h1 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 0.5rem;">System Error</h1>
+                            <p style="color: #4b5563;">Failed to load security configuration.</p>
+                            <button onclick="window.location.reload()" style="
+                                margin-top: 1rem; 
+                                padding: 0.5rem 1rem; 
+                                background-color: #dc2626; 
+                                color: white; 
+                                border: none; 
+                                border-radius: 0.25rem; 
+                                cursor: pointer;
+                            ">Retry</button>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Start initialization
+        initApp();
+    </script>
+</body>
+</html>

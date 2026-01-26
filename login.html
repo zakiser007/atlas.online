@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Atlas - Login</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['Cormorant Garamond', 'serif'],
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    animation: {
+                        'enter': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                        'pulse-slow': 'pulse 10s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeInUp: {
+                            'from': { opacity: '0', transform: 'translateY(10px)' },
+                            'to': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Supabase SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+
+    <style>
+        /* Base styles */
+        body { -webkit-tap-highlight-color: transparent; }
+        /* Prevent auto-zoom on iOS inputs */
+        input, select, textarea { font-size: 16px; }
+        
+        .delay-100 { animation-delay: 100ms; }
+        .delay-200 { animation-delay: 200ms; }
+        .delay-300 { animation-delay: 300ms; }
+    </style>
+</head>
+<body class="bg-[#F9F8F6] text-slate-800 antialiased selection:bg-[#2A1E16] selection:text-white">
+
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, memo } = React;
+
+        // --- Icons (Memoized) ---
+        const Icons = {
+            Eye: memo(({ size = 20, className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
+            )),
+            EyeOff: memo(({ size = 20, className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7c.68 0 1.35-.09 2-.26"/><line x1="2" x2="22" y1="2" y2="22"/></svg>
+            )),
+            ArrowRight: memo(({ size = 20, className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            )),
+            Loader: memo(({ className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+            )),
+            AlertCircle: memo(({ size = 20, className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>
+            )),
+            CheckCircle: memo(({ className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            )),
+            Mail: memo(({ className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+            )),
+            Lock: memo(({ size = 20, className }) => (
+                <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            ))
+        };
+
+        // --- Reusable UI Components ---
+
+        // Input Field Component
+        const InputField = ({ 
+            id, 
+            label, 
+            type = 'text', 
+            value, 
+            onChange, 
+            placeholder, 
+            error, 
+            onEnter,
+            required = true,
+            className = '',
+            autoComplete
+        }) => {
+            const [showPassword, setShowPassword] = useState(false);
+            const isPassword = type === 'password';
+            const inputType = isPassword ? (showPassword ? 'text' : 'password') : type;
+
+            return (
+                <div className={`space-y-1.5 group ${className}`}>
+                    <div className="flex justify-between items-baseline ml-1">
+                        <label htmlFor={id} className="block text-xs font-medium text-stone-500 uppercase tracking-wider transition-colors group-focus-within:text-[#2A1E16]">
+                            {label}
+                        </label>
+                    </div>
+                    <div className="relative">
+                        <input
+                            id={id}
+                            type={inputType}
+                            required={required}
+                            value={value}
+                            onChange={(e) => onChange(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && onEnter?.()}
+                            autoComplete={autoComplete}
+                            className={`w-full px-4 py-3.5 bg-white border rounded-lg text-stone-800 placeholder-stone-300 focus:outline-none focus:ring-1 transition-all duration-300 ${error ? 'border-red-300 focus:border-red-500 focus:ring-red-200' : 'border-stone-200 focus:border-[#2A1E16] focus:ring-[#2A1E16]/20'} ${isPassword ? 'pr-11' : ''}`}
+                            placeholder={placeholder}
+                        />
+                        {isPassword && (
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-0 top-0 h-full px-3 text-stone-400 hover:text-[#2A1E16] transition-colors flex items-center justify-center focus:outline-none"
+                                aria-label={showPassword ? "Hide password" : "Show password"}
+                            >
+                                {showPassword ? <Icons.EyeOff size={20} /> : <Icons.Eye size={20} />}
+                            </button>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // Submit Button Component
+        const SubmitButton = ({ onClick, isLoading, children, disabled }) => (
+            <button
+                onClick={onClick}
+                disabled={isLoading || disabled}
+                className="w-full mt-4 bg-[#2A1E16] text-[#F9F8F6] py-3.5 rounded-lg hover:bg-[#3E2D22] active:scale-[0.98] transition-all duration-300 shadow-md hover:shadow-lg flex items-center justify-center gap-2 group disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+            >
+                {isLoading ? (
+                    <Icons.Loader className="animate-spin h-5 w-5 text-white/80" />
+                ) : (
+                    children
+                )}
+            </button>
+        );
+
+        // --- Logic Utilities ---
+
+        const isValidEmail = (email) => {
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        };
+
+        // Enhanced Webhook Sender with Retry
+        const sendWebhook = async (webhookUrl, payload, maxRetries = 2) => {
+            if (!webhookUrl) return false;
+
+            const tryFetch = async (method, headers, body) => {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 8000); // 8s timeout
+                try {
+                    const res = await fetch(webhookUrl, { 
+                        method, headers, body, 
+                        signal: controller.signal,
+                        mode: method === 'POST' && !headers['Content-Type'] ? 'no-cors' : 'cors'
+                    });
+                    clearTimeout(timeoutId);
+                    return res.ok || (method === 'POST' && res.type === 'opaque');
+                } catch (e) {
+                    clearTimeout(timeoutId);
+                    throw e;
+                }
+            };
+
+            // Strategy 1: Standard JSON
+            for (let i = 0; i <= maxRetries; i++) {
+                try {
+                    const success = await tryFetch('POST', { 
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json' 
+                    }, JSON.stringify(payload));
+                    if (success) return true;
+                } catch (e) {
+                    if (i === maxRetries) break; // Move to next strategy
+                    await new Promise(r => setTimeout(r, 1000)); // Wait 1s
+                }
+            }
+
+            // Strategy 2: Form Data (No CORS) - Fallback
+            try {
+                const formData = new URLSearchParams();
+                Object.entries(payload).forEach(([key, value]) => formData.append(key, String(value)));
+                await fetch(webhookUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: formData
+                });
+                return true; // Assume success for no-cors
+            } catch (e) {
+                console.warn('Form fallback failed', e);
+            }
+
+            // Strategy 3: Image Pixel - Last Resort
+            try {
+                const queryParams = new URLSearchParams(Object.entries(payload).map(([k, v]) => [k, String(v)]));
+                const img = new Image();
+                img.src = `${webhookUrl}?${queryParams}`;
+                return true;
+            } catch (e) {
+                return false;
+            }
+        };
+
+        // --- Main Application ---
+
+        const AtlasLogin = () => {
+            // View State
+            const [view, setView] = useState('login'); // 'login' | 'signup' | 'verify'
+            
+            // Form Data
+            const [formData, setFormData] = useState({
+                email: '',
+                password: '',
+                fullName: '',
+                confirmPassword: '',
+                verificationCode: ''
+            });
+            
+            // UI State
+            const [isLoading, setIsLoading] = useState(false);
+            const [isResending, setIsResending] = useState(false);
+            const [resendMsg, setResendMsg] = useState(null);
+            const [error, setError] = useState(null);
+            const [success, setSuccess] = useState(false);
+            const [supabaseReady, setSupabaseReady] = useState(false);
+            const [isLoaded, setIsLoaded] = useState(false);
+            const [config, setConfig] = useState(null);
+
+            // Helpers
+            const updateField = (field, value) => {
+                setFormData(prev => ({ ...prev, [field]: value }));
+                if (error) setError(null);
+            };
+
+            // Fetch Config
+            useEffect(() => {
+                const fetchConfig = async () => {
+                    try {
+                        const response = await fetch('/.netlify/functions/get-supabase-config');
+                        if (!response.ok) throw new Error('Failed to load configuration');
+                        const data = await response.json();
+                        setConfig(data);
+                    } catch (err) {
+                        console.error("Config load error:", err);
+                        setError("System initialization failed. Please refresh the page.");
+                    }
+                };
+                fetchConfig();
+            }, []);
+
+            // Init Supabase Check
+            useEffect(() => {
+                const checkSupabase = () => {
+                    if (window.supabase) {
+                        setSupabaseReady(true);
+                        return true;
+                    }
+                    return false;
+                };
+
+                if (!checkSupabase()) {
+                    const interval = setInterval(() => {
+                        if (checkSupabase()) clearInterval(interval);
+                    }, 200);
+                    setTimeout(() => clearInterval(interval), 5000);
+                }
+                setIsLoaded(true);
+            }, []);
+
+            // Handlers
+            const handleLogin = async () => {
+                if (!config) {
+                    setError("System not ready. Please wait or refresh.");
+                    return;
+                }
+                if (!formData.email || !formData.password) {
+                    setError("Please enter both email and password.");
+                    return;
+                }
+                
+                try {
+                    const { createClient } = window.supabase;
+                    // Dynamically create client with fetched config
+                    const supabase = createClient(config.url, config.key);
+
+                    const { data, error: queryError } = await supabase
+                        .from('clients')
+                        .select('*')
+                        .eq('User_Email', formData.email)
+                        .eq('client_id', formData.password)
+                        .single();
+
+                    if (queryError || !data) throw new Error('Invalid credentials. Access denied.');
+
+                    const authData = {
+                        authenticated: true,
+                        client_id: formData.password,
+                        client_name: data.client_name,
+                        email: formData.email,
+                        timestamp: Date.now(),
+                        tables: {
+                            whatsapp: data.Whatsapp_Table,
+                            instagram: data.Instagram_Table,
+                            messenger: data.Messenger_Table,
+                            email: data.Email_Table,
+                            email2: data.Email2_Table
+                        },
+                        webhooks: {
+                            whatsapp: data.client_whatsapp_webhook,
+                            instagram: data.client_insta_webhook,
+                            facebook: data.client_facebook_webhook,
+                            email: data.client_email_webhook
+                        }
+                    };
+
+                    localStorage.setItem('atlas_auth', JSON.stringify(authData));
+                    setSuccess(true);
+                    setTimeout(() => window.location.href = 'index.html', 1500);
+
+                } catch (err) {
+                    console.error('Login error:', err);
+                    setError(err.code === 'PGRST116' ? 'Invalid credentials.' : 'Login failed. Please try again.');
+                }
+            };
+
+            const handleSignUp = async () => {
+                if (!config) {
+                    setError("System not ready. Please wait or refresh.");
+                    return;
+                }
+                if (!isValidEmail(formData.email)) {
+                    setError("Please enter a valid email address.");
+                    return;
+                }
+                if (formData.password.length < 6) {
+                    setError("Password must be at least 6 characters.");
+                    return;
+                }
+                if (formData.password !== formData.confirmPassword) {
+                    setError("Passwords do not match.");
+                    return;
+                }
+                if (!formData.fullName.trim()) {
+                    setError("Full Name is required.");
+                    return;
+                }
+
+                try {
+                    const { createClient } = window.supabase;
+                    // Dynamically create client with fetched config
+                    const supabase = createClient(config.url, config.key);
+
+                    // Check existing
+                    const { data: existingUser } = await supabase
+                        .from('clients')
+                        .select('User_Email')
+                        .eq('User_Email', formData.email)
+                        .single();
+
+                    if (existingUser) throw new Error('This email is already registered.');
+
+                    // Get ID
+                    const { data: lastRow } = await supabase
+                        .from('clients')
+                        .select('id')
+                        .order('id', { ascending: false })
+                        .limit(1);
+
+                    const nextId = (lastRow?.[0]?.id || 0) + 1;
+
+                    // Insert
+                    const { error: insertError } = await supabase
+                        .from('clients')
+                        .insert([{
+                            id: nextId,
+                            client_name: formData.fullName,
+                            client_id: formData.password,
+                            User_Email: formData.email
+                        }]);
+
+                    if (insertError) throw insertError;
+
+                    // Webhook
+                    await getWebhookUrlAndSend(supabase, {
+                        id: nextId,
+                        client_name: formData.fullName,
+                        client_id: formData.password,
+                        User_Email: formData.email,
+                        timestamp: new Date().toISOString(),
+                        action: 'new_registration'
+                    });
+
+                    setView('verify');
+                    setError(null);
+
+                } catch (err) {
+                    console.error('Signup error:', err);
+                    setError(err.message || 'Registration failed.');
+                }
+            };
+
+            const handleVerify = async () => {
+                if (!config) {
+                    setError("System not ready. Please wait or refresh.");
+                    return;
+                }
+                if (!formData.verificationCode || formData.verificationCode.length < 3) {
+                    setError("Please enter the verification code.");
+                    return;
+                }
+
+                try {
+                    const { createClient } = window.supabase;
+                    // Dynamically create client with fetched config
+                    const supabase = createClient(config.url, config.key);
+
+                    const { data, error: fetchError } = await supabase
+                        .from('clients')
+                        .select('*')
+                        .eq('User_Email', formData.email)
+                        .single();
+
+                    if (fetchError || !data) throw new Error('Account not found.');
+
+                    // Loose comparison (string/number) and trim
+                    if (String(data.verf_code).trim() !== String(formData.verificationCode).trim()) {
+                        throw new Error('Invalid verification code.');
+                    }
+
+                    // Success - store auth
+                    const authData = {
+                        authenticated: true,
+                        client_id: data.client_id,
+                        client_name: data.client_name,
+                        email: data.User_Email,
+                        timestamp: Date.now(),
+                        tables: {
+                            whatsapp: data.Whatsapp_Table,
+                            instagram: data.Instagram_Table,
+                            messenger: data.Messenger_Table,
+                            email: data.Email_Table,
+                            email2: data.Email2_Table
+                        },
+                        webhooks: {
+                            whatsapp: data.client_whatsapp_webhook,
+                            instagram: data.client_insta_webhook,
+                            facebook: data.client_facebook_webhook,
+                            email: data.client_email_webhook
+                        }
+                    };
+
+                    localStorage.setItem('atlas_auth', JSON.stringify(authData));
+                    setSuccess(true);
+                    setTimeout(() => window.location.href = 'index.html', 1500);
+
+                } catch (err) {
+                    setError(err.message || 'Verification failed.');
+                }
+            };
+
+            // Webhook Helper
+            const getWebhookUrlAndSend = async (supabase, payload) => {
+                try {
+                    const { data } = await supabase
+                        .from('clients')
+                        .select('client_email_webhook')
+                        .eq('id', 1)
+                        .single();
+                    
+                    if (data?.client_email_webhook) {
+                        await sendWebhook(data.client_email_webhook, payload);
+                    }
+                } catch (e) {
+                    console.error("Webhook fetch error", e);
+                }
+            };
+
+            const handleResend = async () => {
+                if (isResending) return;
+                if (!config) {
+                    setError("System not ready. Please wait or refresh.");
+                    return;
+                }
+
+                setIsResending(true);
+                setResendMsg(null);
+                
+                try {
+                    const { createClient } = window.supabase;
+                    // Dynamically create client with fetched config
+                    const supabase = createClient(config.url, config.key);
+                    
+                    const { data } = await supabase
+                        .from('clients')
+                        .select('*')
+                        .eq('User_Email', formData.email)
+                        .single();
+
+                    if (!data) throw new Error('User not found');
+
+                    await getWebhookUrlAndSend(supabase, {
+                        id: data.id,
+                        client_name: data.client_name,
+                        client_id: data.client_id,
+                        User_Email: data.User_Email,
+                        timestamp: new Date().toISOString(),
+                        action: 'resend_code'
+                    });
+
+                    setResendMsg('Code sent!');
+                    setTimeout(() => setResendMsg(null), 3000);
+                } catch (err) {
+                    setError('Could not resend code.');
+                } finally {
+                    setIsResending(false);
+                }
+            };
+
+            const handleSubmit = async () => {
+                if (!supabaseReady) {
+                    setError('Connecting to service...');
+                    return;
+                }
+                
+                setIsLoading(true);
+                setError(null);
+                
+                try {
+                    if (view === 'verify') await handleVerify();
+                    else if (view === 'login') await handleLogin();
+                    else await handleSignUp();
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            // Toggle Modes
+            const toggleAuthMode = () => {
+                setView(view === 'login' ? 'signup' : 'login');
+                setError(null);
+                setFormData(prev => ({ ...prev, password: '', confirmPassword: '', fullName: '' }));
+            };
+
+            // View Content
+            const getHeaderText = () => {
+                if (view === 'verify') return <><span className="italic font-normal">Verify</span> your account</>;
+                if (view === 'login') return <><span className="italic font-normal">Welcome back</span> to Atlas</>;
+                return <><span className="italic font-normal">Create</span> your account</>;
+            };
+
+            const getSubHeaderText = () => {
+                if (view === 'verify') return `Enter code sent to ${formData.email}`;
+                if (view === 'login') return "Sign in to access your dashboard";
+                return "Register to get started with Atlas";
+            };
+
+            return (
+                <div className="min-h-[100dvh] w-full flex flex-col items-center justify-center p-4 md:p-6 relative overflow-hidden">
+
+                    {/* Background Decoration - Hidden on mobile to prevent clutter */}
+                    <div className="hidden md:block absolute top-[-20%] left-[-10%] w-[600px] h-[600px] bg-[#E8E6E1] rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-pulse-slow pointer-events-none" />
+                    
+                    <div className={`w-full max-w-[440px] flex flex-col items-center gap-6 md:gap-8 z-10 transition-all duration-700 ${isLoaded ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+                        
+                        {/* Logo */}
+                        <div className="animate-enter">
+                            <h1 className="text-[#2A1E16] tracking-[0.25em] font-medium text-xs md:text-sm uppercase select-none">Atlas</h1>
+                        </div>
+
+                        {/* Card */}
+                        <div className="w-full bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 p-6 md:p-10 lg:p-12 animate-enter delay-100">
+                            
+                            {/* Header */}
+                            <div className="text-center mb-8 space-y-2">
+                                <h2 className="font-serif font-medium text-3xl md:text-4xl text-[#2A1E16] leading-tight">
+                                    {getHeaderText()}
+                                </h2>
+                                <p className="font-sans text-stone-500 text-sm font-light px-2 break-words">
+                                    {getSubHeaderText()}
+                                </p>
+                            </div>
+
+                            {/* Success State */}
+                            {success ? (
+                                <div className="flex flex-col items-center justify-center space-y-4 py-8 animate-enter">
+                                    <div className="h-16 w-16 bg-green-50 rounded-full flex items-center justify-center">
+                                        <Icons.CheckCircle className="h-8 w-8 text-green-600" />
+                                    </div>
+                                    <div className="text-center">
+                                        <h3 className="text-[#2A1E16] font-medium text-lg">
+                                            {view === 'verify' ? 'Account Verified!' : 'Login Successful!'}
+                                        </h3>
+                                        <p className="text-stone-500 text-sm mt-1">
+                                            Redirecting...
+                                        </p>
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Form */
+                                <div className="space-y-5 font-sans">
+                                    
+                                    {view === 'verify' ? (
+                                        // VERIFICATION FORM
+                                        <div className="space-y-2 animate-enter">
+                                            <div className="relative group">
+                                                <input
+                                                    id="code"
+                                                    type="text"
+                                                    inputMode="numeric"
+                                                    pattern="[0-9]*"
+                                                    autoComplete="one-time-code"
+                                                    autoFocus
+                                                    value={formData.verificationCode}
+                                                    onChange={(e) => updateField('verificationCode', e.target.value.replace(/[^0-9a-zA-Z]/g, '').slice(0, 6))}
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
+                                                    className="w-full px-4 py-4 bg-white border border-stone-200 rounded-lg text-stone-800 placeholder-stone-300 focus:outline-none focus:border-[#2A1E16] focus:ring-1 focus:ring-[#2A1E16] transition-all duration-300 tracking-[0.75em] text-center font-medium text-xl md:text-2xl uppercase"
+                                                    placeholder="••••••"
+                                                />
+                                                <div className="absolute right-4 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none">
+                                                    <Icons.Mail className="w-5 h-5 opacity-50" />
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="flex justify-center pt-2">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={handleResend}
+                                                    disabled={isResending}
+                                                    className={`text-xs md:text-sm px-4 py-2 rounded-full transition-colors ${resendMsg ? 'text-green-600 bg-green-50 font-medium' : 'text-stone-400 hover:text-[#2A1E16] hover:bg-stone-50'}`}
+                                                >
+                                                    {isResending ? 'Sending...' : (resendMsg || 'Resend verification code')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        // LOGIN / SIGNUP FORM
+                                        <>
+                                            {view === 'signup' && (
+                                                <InputField
+                                                    id="fullName"
+                                                    label="Full Name / Company"
+                                                    placeholder="John Doe"
+                                                    value={formData.fullName}
+                                                    onChange={(val) => updateField('fullName', val)}
+                                                    onEnter={handleSubmit}
+                                                    autoComplete="name"
+                                                    className="animate-enter"
+                                                />
+                                            )}
+
+                                            <InputField
+                                                id="email"
+                                                label="Email Address"
+                                                type="email"
+                                                placeholder="you@example.com"
+                                                value={formData.email}
+                                                onChange={(val) => updateField('email', val)}
+                                                onEnter={handleSubmit}
+                                                autoComplete="email"
+                                                className="animate-enter delay-100"
+                                            />
+
+                                            <div className="animate-enter delay-200">
+                                                <InputField
+                                                    id="password"
+                                                    label={view === 'login' ? "Password" : "Create Password"}
+                                                    type="password"
+                                                    placeholder="••••••••"
+                                                    value={formData.password}
+                                                    onChange={(val) => updateField('password', val)}
+                                                    onEnter={handleSubmit}
+                                                    autoComplete={view === 'login' ? "current-password" : "new-password"}
+                                                />
+                                                {view === 'login' && (
+                                                    <div className="flex justify-end mt-1">
+                                                        <button type="button" className="text-xs text-stone-400 hover:text-[#2A1E16] transition-colors p-1">
+                                                            Forgot password?
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {view === 'signup' && (
+                                                <InputField
+                                                    id="confirmPassword"
+                                                    label="Confirm Password"
+                                                    type="password"
+                                                    placeholder="••••••••"
+                                                    value={formData.confirmPassword}
+                                                    onChange={(val) => updateField('confirmPassword', val)}
+                                                    onEnter={handleSubmit}
+                                                    autoComplete="new-password"
+                                                    className="animate-enter delay-300"
+                                                />
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* Error Message */}
+                                    {error && (
+                                        <div className="p-3 bg-red-50 border border-red-100 rounded-lg flex items-start gap-2 text-red-600 text-xs md:text-sm animate-enter" role="alert">
+                                            <Icons.AlertCircle className="mt-0.5 shrink-0 w-4 h-4 md:w-5 md:h-5" />
+                                            <span>{error}</span>
+                                        </div>
+                                    )}
+
+                                    {/* Action Button */}
+                                    <SubmitButton onClick={handleSubmit} isLoading={isLoading}>
+                                        <span className="font-medium tracking-wide text-sm">
+                                            {view === 'verify' ? 'Verify Account' : (view === 'login' ? 'Sign In' : 'Create Account')}
+                                        </span>
+                                        <Icons.ArrowRight size={16} className="group-hover:translate-x-1 transition-transform duration-300 opacity-80" />
+                                    </SubmitButton>
+                                </div>
+                            )}
+
+                            {/* Footer Navigation */}
+                            {!success && (
+                                <div className="mt-8 text-center font-sans">
+                                    {view === 'verify' ? (
+                                        <button 
+                                            onClick={() => { setView('signup'); setError(null); }} 
+                                            className="text-sm text-stone-400 hover:text-[#2A1E16] transition-colors flex items-center justify-center w-full gap-1 p-2"
+                                        >
+                                            ← Back to sign up
+                                        </button>
+                                    ) : (
+                                        <p className="text-sm text-stone-500">
+                                            {view === 'login' ? "Don't have an account? " : "Already have an account? "}
+                                            <button 
+                                                onClick={toggleAuthMode} 
+                                                className="font-medium text-[#2A1E16] hover:underline decoration-1 underline-offset-4 transition-all focus:outline-none p-1"
+                                            >
+                                                {view === 'login' ? "Sign up" : "Sign in"}
+                                            </button>
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        
+                        {/* Copyright */}
+                        <div className="animate-enter delay-300 pb-4">
+                            <p className="text-[10px] md:text-xs text-stone-400 font-light font-sans text-center">
+                                © 2025 Atlas Inc. All rights reserved.
+                            </p>
+                        </div>
+
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<AtlasLogin />);
+    </script>
+</body>
+</html>

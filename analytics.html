@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ATLAS Analytics</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Safer initialization for Tailwind to prevent ReferenceError
+      const initTailwind = () => {
+        if (typeof tailwind !== 'undefined') {
+          tailwind.config = {
+            darkMode: 'class',
+            theme: {
+              extend: {
+                colors: {
+                  gray: {
+                    750: '#2d3748',
+                    850: '#1a202c', 
+                    950: '#0d1117',
+                  },
+                  atlas: {
+                    pink: '#db2777',
+                    blue: '#2563eb',
+                    green: '#16a34a',
+                    red: '#dc2626'
+                  }
+                },
+                screens: {
+                  'xs': '475px',
+                }
+              }
+            }
+          }
+        } else {
+          // Retry if tailwind hasn't loaded yet
+          setTimeout(initTailwind, 50);
+        }
+      };
+      
+      // specific listener to ensure it runs
+      window.addEventListener('load', initTailwind);
+      // also try immediately in case it is already loaded
+      initTailwind();
+    </script>
+    
+    <!-- Babel for JSX support -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map to resolve React, Icons, and Charts -->
+    <script type="importmap">
+    {
+        "imports": {
+            "react": "https://esm.sh/react@18.2.0",
+            "react-dom": "https://esm.sh/react-dom@18.2.0",
+            "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+            "lucide-react": "https://esm.sh/lucide-react@0.292.0",
+            "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+            "recharts": "https://esm.sh/recharts@2.12.0?external=react,react-dom"
+        }
+    }
+    </script>
+    <style>
+        /* Custom Scrollbar for dark mode aesthetics */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #475569;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        
+        /* Mobile optimizations */
+        .touch-action-pan-y {
+            touch-action: pan-y;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useMemo, useCallback, memo, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { createClient } from '@supabase/supabase-js';
+        import { 
+          LayoutDashboard, 
+          MessageSquare, 
+          Users, 
+          BarChart3, 
+          Settings, 
+          Zap, 
+          Bell,
+          ToggleLeft,
+          ToggleRight,
+          RefreshCw,
+          Sun,
+          Moon,
+          AlertCircle,
+          Instagram,
+          Facebook,
+          Phone,
+          Mail,
+          Filter,
+          Link as LinkIcon,
+          Search,
+          ArrowRight,
+          TrendingUp,
+          TrendingDown,
+          Download
+        } from 'lucide-react';
+        import { 
+          BarChart, 
+          Bar, 
+          XAxis, 
+          YAxis, 
+          CartesianGrid, 
+          Tooltip, 
+          ResponsiveContainer,
+          Legend
+        } from 'recharts';
+
+        // ═══════════════════════════════════════════════════════════════════════
+        // AUTHENTICATION CHECK
+        // ═══════════════════════════════════════════════════════════════════════
+        const AUTH_CONFIG = {
+            storageKey: 'atlas_auth',
+            loginPage: 'login.html',
+            sessionDuration: 24 * 60 * 60 * 1000 // 24 hours
+        };
+
+        // Helper to safely handle redirection errors
+        function safeRedirect(reason) {
+            console.warn(`[AUTH] ${reason}. Attempting redirect...`);
+            try {
+                window.location.href = AUTH_CONFIG.loginPage;
+            } catch (e) {
+                console.error('[AUTH] Redirect failed:', e);
+                document.body.innerHTML = `
+                    <div style="height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background-color:#111827;color:white;font-family:sans-serif">
+                        <h2 style="font-size:1.5rem;font-weight:bold;margin-bottom:1rem">Authentication Required</h2>
+                        <p style="color:#9ca3af;margin-bottom:1.5rem">${reason}</p>
+                        <a href="${AUTH_CONFIG.loginPage}" style="background-color:#2563eb;padding:0.5rem 1rem;border-radius:0.375rem;text-decoration:none;font-weight:500">Go to Login</a>
+                    </div>
+                `;
+            }
+        }
+
+        // Check authentication immediately
+        function checkAuthentication() {
+            const authDataRaw = localStorage.getItem(AUTH_CONFIG.storageKey);
+            
+            if (!authDataRaw) {
+                safeRedirect('No authentication data found');
+                throw new Error('Not authenticated'); 
+            }
+            
+            let authData;
+            try {
+                authData = JSON.parse(authDataRaw);
+            } catch (e) {
+                console.error('[AUTH] Corrupted authentication data.');
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                safeRedirect('Invalid auth data');
+                throw new Error('Invalid auth data');
+            }
+            
+            if (!authData.authenticated || !authData.client_id || !authData.timestamp) {
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                safeRedirect('Incomplete auth data');
+                throw new Error('Incomplete auth data');
+            }
+            
+            const sessionAge = Date.now() - authData.timestamp;
+            if (sessionAge > AUTH_CONFIG.sessionDuration) {
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                safeRedirect('Session expired');
+                throw new Error('Session expired');
+            }
+            
+            return authData;
+        }
+
+        const AUTHENTICATED_USER = checkAuthentication();
+
+        function handleLogout() {
+            if (confirm('Are you sure you want to logout?')) {
+                localStorage.removeItem(AUTH_CONFIG.storageKey);
+                safeRedirect('Logged out');
+            }
+        }
+
+        window.addEventListener('error', (event) => {
+            if (event.message.includes('Not authenticated') || 
+                event.message.includes('Session expired')) {
+                event.preventDefault();
+            }
+        });
+
+        // --- Configuration ---
+        // REMOVED HARDCODED SUPABASE CREDENTIALS
+        // Credentials are now fetched from /.netlify/functions/get-supabase-config
+
+        // --- Chart Styling Constants ---
+        const CHART_CONFIG = {
+            colors: {
+                instagram: '#db2777',
+                messenger: '#2563eb',
+                whatsapp: '#16a34a',
+                email: '#dc2626',
+                grid: '#374151',
+                text: '#9ca3af'
+            },
+            style: {
+                tooltip: {
+                    backgroundColor: '#1f2937',
+                    border: 'none',
+                    borderRadius: '8px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.2)',
+                    zIndex: 50
+                },
+                cursor: { fill: 'rgba(255,255,255, 0.05)' }
+            }
+        };
+
+        // --- Components ---
+
+        const PillarIcon = ({ size = 20, className = "" }) => (
+          <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+            <path d="M4 4h16" />
+            <path d="M6 6h12" />
+            <path d="M6 18h12" />
+            <path d="M4 20h16" />
+            <line x1="8" x2="8" y1="6" y2="18" />
+            <line x1="12" x2="12" y1="6" y2="18" />
+            <line x1="16" x2="16" y1="6" y2="18" />
+          </svg>
+        );
+
+        /**
+         * Reusable Analytics Card Component with Chart
+         * Handles rendering of individual channel metrics
+         */
+        const AnalyticsCard = memo(({ title, icon: Icon, count, data, colorClass, barColor, timeLabel, trend, onExport }) => {
+          const isTrendPositive = trend >= 0;
+          const trendColor = isTrendPositive ? 'text-green-500' : 'text-red-500';
+          const TrendIcon = isTrendPositive ? TrendingUp : TrendingDown;
+
+          return (
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col h-[360px] transition-all duration-200 hover:shadow-md group relative">
+              <div className="flex justify-between items-start mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-lg ${colorClass} bg-opacity-10`}>
+                    <Icon size={24} className={colorClass.replace('bg-', 'text-')} />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</h3>
+                    <div className="flex items-baseline gap-2">
+                       <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{count.toLocaleString()}</h2>
+                    </div>
+                  </div>
+                </div>
+                <button 
+                  onClick={onExport}
+                  className="opacity-100 md:opacity-0 md:group-hover:opacity-100 p-2 text-gray-400 hover:text-indigo-600 transition-all duration-200 focus:opacity-100 active:scale-95"
+                  title="Export Data"
+                >
+                  <Download size={16} />
+                </button>
+              </div>
+
+              <div className="mb-6 flex items-center text-xs font-medium">
+                 <div className={`flex items-center ${trendColor} bg-opacity-10 px-2 py-1 rounded-full bg-gray-100 dark:bg-gray-700 mr-2`}>
+                    <TrendIcon size={12} className="mr-1" />
+                    <span>{Math.abs(trend).toFixed(1)}%</span>
+                 </div>
+                 <span className="text-gray-400">vs previous {timeLabel}</span>
+              </div>
+
+              <div className="flex-1 w-full min-h-0 relative">
+                {data && data.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_CONFIG.colors.grid} opacity={0.1} />
+                        <XAxis 
+                          dataKey="date" 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: CHART_CONFIG.colors.text, fontSize: 10 }} 
+                          dy={10}
+                          minTickGap={20}
+                        />
+                        <YAxis 
+                          axisLine={false} 
+                          tickLine={false} 
+                          tick={{ fill: CHART_CONFIG.colors.text, fontSize: 10 }} 
+                        />
+                        <Tooltip 
+                          contentStyle={CHART_CONFIG.style.tooltip}
+                          cursor={CHART_CONFIG.style.cursor}
+                        />
+                        <Bar 
+                          dataKey="count" 
+                          name="Leads" 
+                          fill={barColor} 
+                          radius={[4, 4, 0, 0]} 
+                          barSize={30}
+                          animationDuration={800} 
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                ) : (
+                    <div className="flex items-center justify-center h-full text-gray-400 text-xs">No Data</div>
+                )}
+              </div>
+            </div>
+          );
+        });
+
+        const AnalyticsView = ({ clientConfig, supabase }) => {
+          const [rawData, setRawData] = useState({
+            insta: [], 
+            facebook: [],
+            whatsapp: [],
+            email: []
+          });
+          
+          const [loading, setLoading] = useState(true);
+          const [error, setError] = useState(null);
+          const [refreshKey, setRefreshKey] = useState(0);
+          const [timeRange, setTimeRange] = useState('30');
+          const [touchStart, setTouchStart] = useState(null);
+
+          const refreshData = () => {
+            setRefreshKey(prev => prev + 1);
+          };
+
+          // --- Mobile Swipe Gesture Handler ---
+          const handleTouchStart = (e) => {
+              setTouchStart(e.targetTouches[0].clientX);
+          };
+
+          const handleTouchEnd = (e) => {
+              if (!touchStart) return;
+              const touchEnd = e.changedTouches[0].clientX;
+              const diff = touchStart - touchEnd;
+              const threshold = 75; // px
+
+              if (Math.abs(diff) > threshold) {
+                  const ranges = ['7', '30', 'all'];
+                  const currentIndex = ranges.indexOf(timeRange);
+                  
+                  if (diff > 0 && currentIndex < ranges.length - 1) {
+                      // Swipe Left -> Next (increase range if strictly ordered, or typically user thinks right-to-left is forward)
+                      // Actually, '7' -> '30' -> 'all' order.
+                      setTimeRange(ranges[currentIndex + 1]); 
+                  } else if (diff < 0 && currentIndex > 0) {
+                      // Swipe Right -> Prev
+                      setTimeRange(ranges[currentIndex - 1]); 
+                  }
+              }
+              setTouchStart(null);
+          };
+
+          useEffect(() => {
+            const fetchData = async () => {
+              if (!supabase) {
+                // Wait for supabase to be ready
+                return; 
+              }
+              if (!clientConfig || !clientConfig.tables) return;
+
+              const { tables } = clientConfig;
+
+              try {
+                setLoading(true);
+                setError(null);
+                
+                const promises = [];
+                const results = {};
+
+                // 1. Facebook (Disabled)
+                results.facebook = [];
+
+                // 2. Insta
+                if (tables.insta) {
+                  let query = supabase
+                      .from(tables.insta)
+                      .select('created_at')
+                      .not('lead_message', 'is', null);
+                  
+                  if (clientConfig.userEmail) {
+                      query = query.eq('user_email', clientConfig.userEmail);
+                  }
+
+                  promises.push(query.then(res => ({ type: 'insta', ...res })));
+                } else {
+                  results.insta = [];
+                }
+
+                // 3. WhatsApp (Disabled)
+                results.whatsapp = [];
+                
+                // 4. Email (Disabled)
+                results.email = [];
+
+                const responses = await Promise.all(promises);
+
+                responses.forEach(res => {
+                  if (res.error) {
+                    console.error(`Error fetching ${res.type}:`, res.error);
+                    results[res.type] = []; 
+                  } else {
+                    results[res.type] = res.data || [];
+                  }
+                });
+
+                setRawData({
+                  facebook: results.facebook || [],
+                  insta: results.insta || [],
+                  whatsapp: results.whatsapp || [],
+                  email: results.email || []
+                });
+
+              } catch (err) {
+                console.error('Fetch Error:', err);
+                setError(err.message);
+              } finally {
+                setLoading(false);
+              }
+            };
+
+            fetchData();
+          }, [refreshKey, clientConfig, supabase]);
+
+          // Memoized Aggregation
+          const processedData = useMemo(() => {
+            // Aggregation Helper
+            const filterAndAggregate = (items) => {
+              const now = new Date();
+              let rangeDays = parseInt(timeRange);
+              
+              if (timeRange === 'all') rangeDays = 365 * 2; 
+
+              const currentEnd = now;
+              const currentStart = new Date(now);
+              currentStart.setDate(currentEnd.getDate() - rangeDays);
+
+              const prevEnd = new Date(currentStart);
+              const prevStart = new Date(prevEnd);
+              prevStart.setDate(prevEnd.getDate() - rangeDays);
+
+              const agg = {};
+              let currentCount = 0;
+              let prevCount = 0;
+
+              items.forEach(item => {
+                if (!item.created_at) return;
+                const itemDate = new Date(item.created_at);
+
+                if (itemDate >= currentStart && itemDate <= currentEnd) {
+                  currentCount++;
+                  const isoDate = itemDate.toISOString().split('T')[0];
+                  agg[isoDate] = (agg[isoDate] || 0) + 1;
+                }
+
+                if (itemDate >= prevStart && itemDate < currentStart) {
+                  prevCount++;
+                }
+              });
+
+              // Fill gaps for smooth rendering
+              if (timeRange !== 'all') {
+                 for (let i = 0; i < rangeDays; i++) {
+                     const d = new Date();
+                     d.setDate(now.getDate() - i);
+                     const iso = d.toISOString().split('T')[0];
+                     if (!agg[iso]) agg[iso] = 0;
+                 }
+              }
+
+              const chartData = Object.keys(agg).sort().map(isoDate => ({
+                date: new Date(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                count: agg[isoDate]
+              }));
+
+              // Robust trend calculation
+              let trend = 0;
+              if (prevCount > 0) {
+                trend = ((currentCount - prevCount) / prevCount) * 100;
+              } else if (currentCount > 0) {
+                trend = 100;
+              }
+
+              return { count: currentCount, chartData, trend };
+            };
+
+            const generateCombinedData = () => {
+                let rangeDays = parseInt(timeRange);
+                if (timeRange === 'all') rangeDays = 365;
+
+                const cutoffDate = new Date();
+                cutoffDate.setDate(cutoffDate.getDate() - rangeDays);
+
+                const dateMap = {};
+
+                if (timeRange !== 'all') {
+                    for (let i = 0; i < rangeDays; i++) {
+                        const d = new Date();
+                        d.setDate(new Date().getDate() - i);
+                        const iso = d.toISOString().split('T')[0];
+                        dateMap[iso] = { date: iso, insta: 0, facebook: 0, whatsapp: 0, email: 0 };
+                    }
+                }
+
+                const processChannel = (channelName, items) => {
+                    items.forEach(item => {
+                        if (!item.created_at) return;
+                        const itemDate = new Date(item.created_at);
+                        if (timeRange !== 'all' && itemDate < cutoffDate) return;
+                        
+                        const isoDate = itemDate.toISOString().split('T')[0];
+                        if (!dateMap[isoDate]) {
+                            dateMap[isoDate] = { date: isoDate, insta: 0, facebook: 0, whatsapp: 0, email: 0 };
+                        }
+                        dateMap[isoDate][channelName]++;
+                    });
+                };
+
+                processChannel('insta', rawData.insta);
+                processChannel('facebook', rawData.facebook);
+                processChannel('whatsapp', rawData.whatsapp);
+                processChannel('email', rawData.email);
+
+                return Object.values(dateMap)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date))
+                    .map(item => ({
+                        ...item,
+                        formattedDate: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                    }));
+            };
+
+            return {
+              insta: filterAndAggregate(rawData.insta),
+              facebook: filterAndAggregate(rawData.facebook),
+              whatsapp: filterAndAggregate(rawData.whatsapp),
+              email: filterAndAggregate(rawData.email),
+              combined: generateCombinedData()
+            };
+          }, [rawData, timeRange]);
+
+          const handleExport = useCallback((channel, data) => {
+            try {
+                if (!data || data.length === 0) {
+                    alert("No data to export");
+                    return;
+                }
+                const csvContent = "Date,Count\n" + data.map(e => `${e.date},${e.count}`).join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.setAttribute("href", url);
+                link.setAttribute("download", `atlas_analytics_${channel}_${timeRange}d.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error("Export failed:", err);
+                alert("Failed to export data. Please try again.");
+            }
+          }, [timeRange]);
+
+          const getTimeLabel = () => {
+            if (timeRange === '7') return '7 Days';
+            if (timeRange === '30') return '30 Days';
+            return 'All Time';
+          };
+
+          if (loading) {
+            return (
+              <div className="flex flex-col items-center justify-center h-96">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mb-4"></div>
+                <p className="text-gray-500 dark:text-gray-400 animate-pulse">
+                  Fetching analytics...
+                </p>
+              </div>
+            );
+          }
+
+          if (error) {
+             return (
+               <div className="flex flex-col items-center justify-center h-96 text-red-500">
+                 <AlertCircle size={48} className="mb-4" />
+                 <h3 className="font-bold text-lg">Connection Error</h3>
+                 <p className="text-sm opacity-75 mt-2 max-w-md text-center bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">{error}</p>
+                 <button onClick={refreshData} className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                    <RefreshCw size={16} /> Retry Connection
+                 </button>
+               </div>
+             )
+          }
+
+          return (
+            <div 
+                className="space-y-8 animate-in fade-in duration-500 pb-20 touch-action-pan-y"
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+            >
+               {/* Main Page Header & Global Controls */}
+               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Analytics Dashboard</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400">System performance overview</p>
+                  </div>
+                  <div className="flex gap-2 items-center">
+                     <button onClick={refreshData} className="p-2 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 transition-colors" title="Refresh Data">
+                        <RefreshCw size={20} />
+                     </button>
+                     <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2"></div>
+                     <Filter size={16} className="text-gray-400" />
+                     <select 
+                        value={timeRange}
+                        onChange={(e) => setTimeRange(e.target.value)}
+                        className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm rounded-lg px-4 py-2 text-gray-600 dark:text-gray-300 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer hover:border-indigo-300 transition-colors appearance-none"
+                        style={{ WebkitAppearance: 'none' }} 
+                     >
+                        <option value="7">Last 7 Days</option>
+                        <option value="30">Last 30 Days</option>
+                        <option value="all">All Time</option>
+                     </select>
+                  </div>
+               </div>
+
+               {/* --- SECTION: LEAD MESSAGES ANALYTICS --- */}
+               <section className="space-y-6">
+                  {/* Section Title */}
+                  <div className="flex items-center gap-3 border-l-4 border-indigo-500 pl-4 py-1">
+                      <MessageSquare className="text-indigo-600 dark:text-indigo-400" size={24} />
+                      <h3 className="text-xl font-bold text-gray-800 dark:text-white">Lead Messages Analytics</h3>
+                  </div>
+
+                   {/* 1. Unified Big Board (Stacked) */}
+                   <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm h-[350px] md:h-[400px] flex flex-col">
+                      <div className="mb-4">
+                          <h3 className="text-lg font-bold text-gray-800 dark:text-white">Unified Traffic Volume</h3>
+                          <p className="text-xs text-gray-500">Combined daily lead activity</p>
+                      </div>
+                      <div className="flex-1 w-full min-h-0">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={processedData.combined} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={CHART_CONFIG.colors.grid} opacity={0.1} />
+                            <XAxis 
+                              dataKey="formattedDate" 
+                              axisLine={false} 
+                              tickLine={false} 
+                              tick={{ fill: CHART_CONFIG.colors.text, fontSize: 10 }} 
+                              dy={10}
+                              minTickGap={20}
+                            />
+                            <YAxis 
+                              axisLine={false} 
+                              tickLine={false} 
+                              tick={{ fill: CHART_CONFIG.colors.text, fontSize: 10 }} 
+                            />
+                            <Tooltip 
+                              contentStyle={CHART_CONFIG.style.tooltip}
+                              cursor={CHART_CONFIG.style.cursor}
+                            />
+                            <Legend wrapperStyle={{ paddingTop: '10px', fontSize: '12px' }} />
+                            <Bar dataKey="insta" name="Instagram" stackId="a" fill={CHART_CONFIG.colors.instagram} radius={[4, 4, 0, 0]} barSize={30} />
+                            <Bar dataKey="facebook" name="Messenger" stackId="a" fill={CHART_CONFIG.colors.messenger} radius={[0,0,0,0]} barSize={30} />
+                            <Bar dataKey="whatsapp" name="WhatsApp" stackId="a" fill={CHART_CONFIG.colors.whatsapp} radius={[0,0,0,0]} barSize={30} />
+                            <Bar dataKey="email" name="Email" stackId="a" fill={CHART_CONFIG.colors.email} radius={[0,0,0,0]} barSize={30} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                   </div>
+
+                   {/* The 4 Parts Grid - With Trend Indicators */}
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                      <AnalyticsCard 
+                        title="Instagram Leads" 
+                        icon={Instagram} 
+                        count={processedData.insta.count} 
+                        data={processedData.insta.chartData}
+                        trend={processedData.insta.trend}
+                        timeLabel={getTimeLabel()}
+                        colorClass="text-pink-600 dark:text-pink-400 bg-pink-100 dark:bg-pink-900"
+                        barColor={CHART_CONFIG.colors.instagram}
+                        onExport={() => handleExport('instagram', processedData.insta.chartData)}
+                      />
+
+                      <AnalyticsCard 
+                        title="Messenger Leads" 
+                        icon={Facebook} 
+                        count={processedData.facebook.count} 
+                        data={processedData.facebook.chartData}
+                        trend={processedData.facebook.trend}
+                        timeLabel={getTimeLabel()}
+                        colorClass="text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900"
+                        barColor={CHART_CONFIG.colors.messenger} 
+                        onExport={() => handleExport('messenger', processedData.facebook.chartData)}
+                      />
+
+                      <AnalyticsCard 
+                        title="WhatsApp Leads" 
+                        icon={Phone} 
+                        count={processedData.whatsapp.count} 
+                        data={processedData.whatsapp.chartData}
+                        trend={processedData.whatsapp.trend}
+                        timeLabel={getTimeLabel()}
+                        colorClass="text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900"
+                        barColor={CHART_CONFIG.colors.whatsapp}
+                        onExport={() => handleExport('whatsapp', processedData.whatsapp.chartData)}
+                      />
+
+                      <AnalyticsCard 
+                        title="Email Leads" 
+                        icon={Mail} 
+                        count={processedData.email.count} 
+                        data={processedData.email.chartData}
+                        trend={processedData.email.trend}
+                        timeLabel={getTimeLabel()}
+                        colorClass="text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900"
+                        barColor={CHART_CONFIG.colors.email}
+                        onExport={() => handleExport('email', processedData.email.chartData)}
+                      />
+                   </div>
+               </section>
+
+               <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-4 flex items-center justify-center text-indigo-800 dark:text-indigo-300 text-sm font-medium border border-indigo-100 dark:border-indigo-800/50">
+                  <Zap size={16} className="mr-2" />
+                  <span className="truncate max-w-2xl">
+                    Data Sources: {clientConfig?.tables?.insta || 'N/A'} (Others Disabled)
+                  </span>
+               </div>
+            </div>
+          );
+        };
+
+        function AnalyticsPage() {
+          const [isSidebarOpen, setSidebarOpen] = useState(true);
+          const [isDarkMode, setIsDarkMode] = useState(false);
+          const [clientConfig, setClientConfig] = useState(null);
+          const [configError, setConfigError] = useState(null);
+          const [supabaseClient, setSupabaseClient] = useState(null);
+          const [isLoadingConfig, setIsLoadingConfig] = useState(true);
+
+          useEffect(() => {
+            if (isDarkMode) {
+              document.documentElement.classList.add('dark');
+            } else {
+              document.documentElement.classList.remove('dark');
+            }
+          }, [isDarkMode]);
+
+          // Fetch Supabase Config and Init
+          useEffect(() => {
+            const initSupabase = async () => {
+                try {
+                    const resp = await fetch('/.netlify/functions/get-supabase-config');
+                    if (!resp.ok) throw new Error('Failed to load config');
+                    
+                    const config = await resp.json();
+                    const client = createClient(config.url, config.key);
+                    setSupabaseClient(client);
+                } catch (err) {
+                    console.error("Failed to init supabase", err);
+                    setConfigError("Failed to initialize database connection. Please try refreshing.");
+                } finally {
+                    setIsLoadingConfig(false);
+                }
+            };
+            initSupabase();
+          }, []);
+
+          useEffect(() => {
+            if (AUTHENTICATED_USER) {
+                const tables = {
+                    insta: AUTHENTICATED_USER.tables.instagram || AUTHENTICATED_USER.tables.insta, 
+                    messenger: AUTHENTICATED_USER.tables.messenger,
+                    whatsapp: AUTHENTICATED_USER.tables.whatsapp,
+                    email: AUTHENTICATED_USER.tables.email2 
+                };
+
+                setClientConfig({
+                    clientName: AUTHENTICATED_USER.client_name,
+                    userEmail: AUTHENTICATED_USER.email, 
+                    tables: tables
+                });
+            }
+          }, []);
+
+          const toggleTheme = () => setIsDarkMode(!isDarkMode);
+
+          const handleNavClick = (target) => {
+            if (target === 'dashboard') {
+              window.location.href = 'index.html'; 
+            } else if (target === 'audience') {
+              window.location.href = 'audience.html';
+            } else if (target === 'analytics') {
+              // Already here
+            } else if (target === 'settings') {
+               console.log("Settings clicked");
+            }
+          };
+
+          const SidebarItem = ({ id, icon: Icon, label, isActive }) => {
+            return (
+              <button
+                onClick={() => handleNavClick(id)}
+                className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors duration-200 ${
+                  isActive 
+                    ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 border-r-4 border-indigo-600 dark:border-indigo-500' 
+                    : 'text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                <Icon size={20} />
+                {isSidebarOpen && <span>{label}</span>}
+              </button>
+            );
+          };
+
+          return (
+            <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans text-gray-900 dark:text-gray-100 transition-colors duration-200">
+              
+              <aside className={`${isSidebarOpen ? 'w-64' : 'w-20'} bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-300 z-20 hidden md:flex`}>
+                <div 
+                  className="p-6 flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity"
+                  onClick={() => handleNavClick('dashboard')}
+                >
+                   <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-indigo-500/30">
+                     <PillarIcon size={20} />
+                   </div>
+                   {isSidebarOpen && <span className="font-bold text-xl tracking-tight text-gray-800 dark:text-white">ATLAS</span>}
+                </div>
+
+                <nav className="flex-1 mt-4 space-y-1">
+                  <SidebarItem id="dashboard" icon={LayoutDashboard} label="Dashboard" isActive={false} />
+                  <SidebarItem id="audience" icon={Users} label="Audience" isActive={false} />
+                  <SidebarItem id="analytics" icon={BarChart3} label="Analytics" isActive={true} />
+                  <div className="pt-4 mt-4 border-t border-gray-100 dark:border-gray-700">
+                    <SidebarItem id="settings" icon={Settings} label="Settings" isActive={false} />
+                  </div>
+                </nav>
+
+                <div className="p-4 border-t border-gray-100 dark:border-gray-700">
+                  <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="flex items-center gap-3 text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 transition-colors">
+                    {isSidebarOpen ? <ToggleLeft size={24} /> : <ToggleRight size={24} />}
+                    {isSidebarOpen && <span className="text-xs font-medium">Collapse</span>}
+                  </button>
+                </div>
+              </aside>
+
+              {/* Mobile Sidebar Overlay (Simple Implementation for now) */}
+              <div className="md:hidden fixed bottom-0 left-0 w-full bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50 flex justify-around p-3">
+                  <button onClick={() => handleNavClick('dashboard')} className="p-2 text-gray-500 dark:text-gray-400"><LayoutDashboard size={24} /></button>
+                  <button onClick={() => handleNavClick('audience')} className="p-2 text-gray-500 dark:text-gray-400"><Users size={24} /></button>
+                  <button className="p-2 text-indigo-600 dark:text-indigo-400"><BarChart3 size={24} /></button>
+                  <button onClick={() => handleNavClick('settings')} className="p-2 text-gray-500 dark:text-gray-400"><Settings size={24} /></button>
+              </div>
+
+              <main className="flex-1 flex flex-col overflow-hidden relative">
+                <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center px-4 md:px-6 shadow-sm z-10 transition-colors duration-200">
+                  <div className="flex flex-col">
+                    <h1 className="text-lg md:text-xl font-bold text-gray-800 dark:text-white capitalize">
+                      Analytics Overview
+                    </h1>
+                    {clientConfig && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`w-2 h-2 rounded-full ${isLoadingConfig ? 'bg-yellow-500' : 'bg-green-500'} animate-pulse`}></span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 truncate max-w-[150px]">Connected: <span className="font-bold text-indigo-600 dark:text-indigo-400">{clientConfig.clientName}</span></span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 rounded-full text-xs border border-indigo-100 dark:border-indigo-800">
+                        <span className="font-medium text-indigo-700 dark:text-indigo-300">
+                            {AUTHENTICATED_USER.client_name}
+                        </span>
+                    </div>
+
+                    <button 
+                        onClick={handleLogout}
+                        className="flex items-center gap-2 px-2 py-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"
+                        title="Logout"
+                    >
+                        <div className="w-4 h-4">
+                             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+                        </div>
+                        <span className="hidden md:inline">Logout</span>
+                    </button>
+
+                    <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 hidden md:block"></div>
+
+                    <button 
+                      onClick={toggleTheme} 
+                      className="p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                      title="Toggle Theme"
+                    >
+                      {isDarkMode ? <Sun size={20} className="text-yellow-400" /> : <Moon size={20} />}
+                    </button>
+                  </div>
+                </header>
+
+                <div className="flex-1 overflow-y-auto p-4 md:p-6 bg-gray-50 dark:bg-gray-900 transition-colors duration-200 pb-20 md:pb-6">
+                   {configError ? (
+                     <div className="flex flex-col items-center justify-center h-full text-red-500">
+                        <AlertCircle size={48} className="mb-4" />
+                        <h3 className="font-bold text-xl">Configuration Error</h3>
+                        <p className="mt-2 text-gray-600 dark:text-gray-400 mb-6">{configError}</p>
+                     </div>
+                   ) : isLoadingConfig ? (
+                       <div className="flex flex-col items-center justify-center h-full">
+                           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
+                           <p className="text-gray-500 dark:text-gray-400 animate-pulse">Initializing secure connection...</p>
+                       </div>
+                   ) : (
+                     <AnalyticsView clientConfig={clientConfig} supabase={supabaseClient} />
+                   )}
+                </div>
+
+              </main>
+            </div>
+          );
+        }
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<AnalyticsPage />);
+    </script>
+</body>
+</html>
