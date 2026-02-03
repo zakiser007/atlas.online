@@ -5,50 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ATLAS Dashboard</title>
     
-    <!-- Error Handling Styles -->
-    <style>
-        #error-overlay {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: #0f172a;
-            color: #ef4444;
-            z-index: 9999;
-            padding: 2rem;
-            font-family: monospace;
-            overflow: auto;
-        }
-        #error-content {
-            background: #1e293b;
-            padding: 1.5rem;
-            border-radius: 0.5rem;
-            border: 1px solid #334155;
-            max-width: 800px;
-            margin: 0 auto;
-        }
-    </style>
-
-    <!-- Global Error Handler -->
-    <script>
-        window.onerror = function(msg, url, line, col, error) {
-            const overlay = document.getElementById('error-overlay');
-            const content = document.getElementById('error-details');
-            if (overlay && content) {
-                overlay.style.display = 'block';
-                content.innerText += `\n[Error] ${msg}\nLocation: ${url}:${line}:${col}\n${error?.stack || ''}\n`;
-            }
-            return false;
-        };
-        window.addEventListener('unhandledrejection', function(event) {
-            const overlay = document.getElementById('error-overlay');
-            const content = document.getElementById('error-details');
-            if (overlay && content) {
-                overlay.style.display = 'block';
-                content.innerText += `\n[Promise Error] ${event.reason}\n`;
-            }
-        });
-    </script>
-    
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -131,16 +87,52 @@
 </head>
 <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200 antialiased overflow-hidden selection:bg-indigo-500 selection:text-white">
     
-    <!-- Error Overlay for Debugging -->
-    <div id="error-overlay">
-        <div id="error-content">
-            <h2 style="color: #f87171; font-size: 1.5rem; margin-bottom: 1rem; border-bottom: 1px solid #334155; padding-bottom: 0.5rem;">System Error</h2>
-            <p style="color: #94a3b8; margin-bottom: 1rem;">The application encountered a critical error and could not load.</p>
-            <pre id="error-details" style="white-space: pre-wrap; color: #e2e8f0; font-size: 0.875rem;"></pre>
-            <button onclick="window.location.reload()" style="margin-top: 1rem; padding: 0.5rem 1rem; background: #4f46e5; color: white; border: none; border-radius: 0.25rem; cursor: pointer;">Reload Page</button>
-            <button onclick="localStorage.removeItem('atlas_auth'); window.location.href='login.html'" style="margin-top: 1rem; margin-left: 0.5rem; padding: 0.5rem 1rem; background: #ef4444; color: white; border: none; border-radius: 0.25rem; cursor: pointer;">Clear Auth & Login</button>
-        </div>
-    </div>
+    <!-- EARLY AUTHENTICATION CHECK - Runs BEFORE React loads -->
+    <script>
+        (function() {
+            console.log('[AUTH] Running early authentication check...');
+            
+            const authDataRaw = localStorage.getItem('atlas_auth');
+            
+            // No auth data found
+            if (!authDataRaw) {
+                console.log('[AUTH] No login data found, redirecting to login.html');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // Try to parse auth data
+            let authData;
+            try {
+                authData = JSON.parse(authDataRaw);
+            } catch (e) {
+                console.log('[AUTH] Corrupted login data, clearing and redirecting to login.html');
+                localStorage.removeItem('atlas_auth');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // Validate required fields
+            if (!authData || typeof authData !== 'object' || !authData.authenticated || !authData.client_id || !authData.timestamp) {
+                console.log('[AUTH] Invalid login data, clearing and redirecting to login.html');
+                localStorage.removeItem('atlas_auth');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            // Check session expiration
+            const sessionAge = Date.now() - authData.timestamp;
+            if (sessionAge > 24 * 60 * 60 * 1000) { // 24 hours
+                console.log('[AUTH] Session expired, clearing and redirecting to login.html');
+                localStorage.removeItem('atlas_auth');
+                window.location.href = 'login.html';
+                return;
+            }
+            
+            console.log('[AUTH] ✓ Authentication valid for user:', authData.client_name);
+            // Auth is valid, continue loading React
+        })();
+    </script>
 
     <div id="root"></div>
 
@@ -192,93 +184,17 @@
           ResponsiveContainer 
         } from 'recharts';
 
-        /* * AUTHENTICATION TESTING CHECKLIST:
-         * * ✓ Direct URL access without login → Redirects to login.html
-         * ✓ After login → Loads configuration automatically
-         * ✓ Logout button → Clears session and redirects to login
-         * ✓ Session expired (24h) → Redirects to login
-         * ✓ Corrupted localStorage data → Clears and redirects
-         * ✓ All features work without manual client ID entry
-         * ✓ User name displayed correctly in UI
-         * ✓ Navigation between pages maintains session
-         * * File: index.html
-         */
-
         // ═══════════════════════════════════════════════════════════════════════
-        // AUTHENTICATION CHECK - Must be at the TOP
+        // AUTHENTICATION CHECK - Gets user data from localStorage
         // ═══════════════════════════════════════════════════════════════════════
-        const AUTH_CONFIG = {
-            storageKey: 'atlas_auth',
-            loginPage: 'login.html',
-            sessionDuration: 24 * 60 * 60 * 1000 // 24 hours
-        };
-
-        // Check authentication immediately
-        function checkAuthentication() {
-            const authDataRaw = localStorage.getItem(AUTH_CONFIG.storageKey);
-            
-            // 1. Check if data exists at all
-            if (!authDataRaw) {
-                console.warn('[AUTH] No authentication data found. Redirecting to login.');
-                window.location.href = AUTH_CONFIG.loginPage;
-                throw new Error('Not authenticated'); // Stop execution
-            }
-            
-            let authData;
-            try {
-                authData = JSON.parse(authDataRaw);
-            } catch (e) {
-                console.error('[AUTH] Corrupted authentication data. Clearing and redirecting.');
-                localStorage.removeItem(AUTH_CONFIG.storageKey);
-                window.location.href = AUTH_CONFIG.loginPage;
-                throw new Error('Invalid auth data');
-            }
-
-            // 2. Check if data is valid object
-            if (!authData || typeof authData !== 'object') {
-                console.error('[AUTH] Invalid authentication data format. Redirecting to login.');
-                localStorage.removeItem(AUTH_CONFIG.storageKey);
-                window.location.href = AUTH_CONFIG.loginPage;
-                throw new Error('Invalid auth structure');
-            }
-            
-            // 3. Validate required fields
-            if (!authData.authenticated || !authData.client_id || !authData.timestamp) {
-                console.error('[AUTH] Incomplete authentication data. Redirecting to login.');
-                localStorage.removeItem(AUTH_CONFIG.storageKey);
-                window.location.href = AUTH_CONFIG.loginPage;
-                throw new Error('Incomplete auth data');
-            }
-            
-            // 4. Check if session expired
-            const sessionAge = Date.now() - authData.timestamp;
-            if (sessionAge > AUTH_CONFIG.sessionDuration) {
-                console.warn('[AUTH] Session expired. Redirecting to login.');
-                localStorage.removeItem(AUTH_CONFIG.storageKey);
-                window.location.href = AUTH_CONFIG.loginPage;
-                throw new Error('Session expired');
-            }
-            
-            console.log('[AUTH] ✓ Authentication valid for user:', authData.client_name);
-            return authData;
-        }
-
-        // Execute check safely - Catch error to allow React to render error state if needed
-        let AUTHENTICATED_USER = null;
-        try {
-            AUTHENTICATED_USER = checkAuthentication();
-        } catch (authErr) {
-            console.error("[System] Auth check failed:", authErr);
-            // We do NOT stop execution here. We let React mount and show a "Redirecting" UI.
-            // The checkAuthentication function has already triggered window.location.href
-        }
+        const AUTHENTICATED_USER = JSON.parse(localStorage.getItem('atlas_auth'));
 
         // Logout function for use in components
         function handleLogout() {
             if (window.confirm('Are you sure you want to logout?')) {
                 console.log('[AUTH] User logged out');
-                localStorage.removeItem(AUTH_CONFIG.storageKey);
-                window.location.href = AUTH_CONFIG.loginPage;
+                localStorage.removeItem('atlas_auth');
+                window.location.href = 'login.html';
             }
         }
 
@@ -575,25 +491,6 @@
 
         // Main Dashboard Component
         function AtlasDashboard() {
-          // If auth failed, show a redirecting screen instead of crashing
-          if (!AUTHENTICATED_USER) {
-              return (
-                <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900 font-sans">
-                    <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 max-w-sm w-full mx-4">
-                        <Loader2 size={48} className="animate-spin text-indigo-600 mx-auto mb-6" />
-                        <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200 mb-2">Redirecting to Login</h2>
-                        <p className="text-gray-500 dark:text-gray-400 text-sm">Please wait while we verify your session...</p>
-                        <button 
-                            onClick={() => window.location.href = AUTH_CONFIG.loginPage}
-                            className="mt-6 text-xs text-indigo-600 hover:text-indigo-500 font-medium underline"
-                        >
-                            Click here if not redirected
-                        </button>
-                    </div>
-                </div>
-              );
-          }
-
           const [activeTab, setActiveTab] = useState('dashboard');
           const [botToggles, setBotToggles] = useState({ 
             instagram: false, 
@@ -644,7 +541,7 @@
                     console.log('[ATLAS] Attempting lookup with:', {
                         client_name: AUTHENTICATED_USER.client_name,
                         client_id: AUTHENTICATED_USER.client_id,
-                        email: AUTHENTICATED_USER.email, // ADDED: Log email
+                        email: AUTHENTICATED_USER.email,
                         timestamp: new Date().toISOString()
                     });
 
